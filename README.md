@@ -244,19 +244,13 @@ brain-co follows several architectural principles:
 
 ## 📚 Project Documentation
 
-The repository contains the project's technical and architectural documentation, including:
+All foundational project documentation has been organized under [`docs/project-specifications/`](docs/project-specifications/):
 
-* Project Constitution
-* Requirements
-* System Architecture
-* Data Architecture
-* AI Architecture
-* API Contracts
-* Domain Specifications
-* Database / ERD
-* Architecture Decision Records (ADRs)
-* Testing & Evaluation
-* Deployment Documentation
+* [Master Project Constitution](docs/project-specifications/ORGANIZATIONAL_BRAIN_MASTER_PROJECT_CONSTITUTION.md)
+* [Requirements Specification](docs/project-specifications/REQUIREMENTS_SPECIFICATION.md)
+* [Project Scope](docs/project-specifications/PROJECT_SCOPE.md)
+* [Architecture Roadmap](docs/project-specifications/Organizational_Brain_Architecture_Roadmap_Final_version.pdf)
+* [Egyptian Legal References (Civil Code & Constitution)](docs/project-specifications/README.md)
 
 The **Project Constitution** is the highest-level source of truth for the project, followed by approved architecture decisions, specifications, contracts, and implementation documentation.
 
