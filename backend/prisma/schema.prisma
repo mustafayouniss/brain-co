@@ -1,0 +1,379 @@
+// 🧠 Master Prisma Schema — Organizational Brain (OB)
+// Strictly follows the Constitution (Rings 0-11+) & Case Isolation guarantees
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+// ═════════════════════════════════════════════════════════════
+// RING 4: ORGANIZATION CONTEXT & RBAC (TENANCY)
+// ═════════════════════════════════════════════════════════════
+
+model Organization {
+  id                  String               @id @default(uuid())
+  name                String
+  domain              String               @default("legal") // legal, sales, hr, etc.
+  config              Json                 @default("{}") // policies, custom workflows
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  users               User[]
+  roles               Role[]
+  clients             Client[]
+  cases               Case[]
+  validationAuthority ValidationAuthority?
+  autonomyConfigs     AutonomyConfig[]
+}
+
+model Role {
+  id             String       @id @default(uuid())
+  name           String
+  organizationId String
+  permissions    Json         // array of resource:action strings
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users          User[]
+
+  @@unique([organizationId, name])
+}
+
+model User {
+  id             String       @id @default(uuid())
+  email          String       @unique
+  passwordHash   String
+  name           String
+  organizationId String
+  roleId         String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           Role         @relation(fields: [roleId], references: [id])
+}
+
+model ValidationAuthority {
+  id              String       @id @default(uuid())
+  organizationId  String       @unique
+  authorizedRoles Json         // array of role names with authority to validate knowledge
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ═════════════════════════════════════════════════════════════
+// RING 1 & 6: PERCEPTION, OBSERVATION & CHANNELS (WHATSAPP)
+// ═════════════════════════════════════════════════════════════
+
+model Observation {
+  id             String    @id @default(uuid())
+  type           String    // message, document_upload, action_event
+  source         String    // whatsapp, crm, email, portal
+  content        Json      // raw payload
+  timestamp      DateTime  @default(now())
+  organizationId String
+  contextId      String?
+  context        Context?  @relation(fields: [contextId], references: [id])
+
+  @@index([organizationId, timestamp])
+}
+
+model Context {
+  id             String        @id @default(uuid())
+  organizationId String
+  domainId       String?
+  caseId         String?
+  userId         String?
+  metadata       Json          @default("{}")
+  observations   Observation[]
+}
+
+model Conversation {
+  id             String       @id @default(uuid())
+  source         String       // whatsapp, web_chat
+  externalId     String?      // e.g. WhatsApp conversation/phone ID
+  organizationId String
+  caseId         String?
+  clientId       String?
+  status         String       @default("active") // active, resolved, archived
+  metadata       Json         @default("{}")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  case           Case?        @relation(fields: [caseId], references: [id])
+  client         Client?      @relation(fields: [clientId], references: [id])
+  messages       Message[]
+  facts          Fact[]
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  senderType     String       // client, lawyer, system
+  senderId       String?
+  content        String
+  timestamp      DateTime     @default(now())
+  metadata       Json         @default("{}")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model Fact {
+  id             String       @id @default(uuid())
+  conversationId String
+  caseId         String?
+  type           String       // date, financial_amount, legal_entity, contractual_obligation
+  content        String
+  confidence     Float
+  timestamp      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  case           Case?        @relation(fields: [caseId], references: [id])
+}
+
+// ═════════════════════════════════════════════════════════════
+// RING 5: CASE & CLIENT INTELLIGENCE (STRICT CASE ISOLATION)
+// ═════════════════════════════════════════════════════════════
+
+model Client {
+  id             String         @id @default(uuid())
+  organizationId String
+  name           String
+  nationalId     String?        // Egyptian National ID (14 digits)
+  phone          String?        // Primary WhatsApp number
+  email          String?
+  metadata       Json           @default("{}")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  cases          Case[]
+  conversations  Conversation[]
+}
+
+model Case {
+  id             String          @id @default(uuid())
+  organizationId String
+  clientId       String
+  caseNumber     String          // Internal or court case number
+  title          String
+  status         String          @default("new") // new, active, under_pleading, resolved, archived
+  priority       String          @default("medium") // low, medium, high, urgent
+  assignedLawyerId String?
+  metadata       Json            @default("{}")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client         Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  knowledge      CaseKnowledge[]
+  conversations  Conversation[]
+  assistances    Assistance[]
+  missingInfos   MissingInfo[]
+  facts          Fact[]
+
+  @@unique([organizationId, caseNumber])
+  @@index([organizationId, clientId])
+}
+
+model CaseKnowledge {
+  id        String   @id @default(uuid())
+  caseId    String
+  type      String   // fact, procedural_deadline, claim_detail, evidence_summary
+  content   Json
+  source    String   // conversation, uploaded_document, lawyer_note
+  timestamp DateTime @default(now())
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+}
+
+// ═════════════════════════════════════════════════════════════
+// RING 2 & 8: KNOWLEDGE LIFECYCLE & MULTI-STORE MEMORY
+// ═════════════════════════════════════════════════════════════
+
+model KnowledgeObject {
+  id         String                        @id @default(uuid())
+  organizationId String?
+  domainId   String?
+  layer      String                        @default("domain") // general, domain, organization, case
+  type       String                        // law_article, judicial_principle, org_rule, procedure
+  content    Json
+  embedding  Unsupported("vector(1536)")?
+  confidence Float                         @default(1.0)
+  status     String                        @default("trusted") // candidate, trusted, superseded, rejected
+  source     String
+  timestamp  DateTime                      @default(now())
+  provenance Provenance[]
+
+  @@index([organizationId, layer])
+  @@index([domainId])
+}
+
+model Provenance {
+  id                String          @id @default(uuid())
+  knowledgeObjectId String
+  sourceType        String          // legislation, court_ruling, human_validation, case_extraction
+  sourceReference   String          // URL, document name, law article #
+  validatorId       String?
+  validatedAt       DateTime?
+  metadata          Json            @default("{}")
+  timestamp         DateTime        @default(now())
+  knowledgeObject   KnowledgeObject @relation(fields: [knowledgeObjectId], references: [id], onDelete: Cascade)
+}
+
+model KnowledgeCandidate {
+  id             String    @id @default(uuid())
+  organizationId String
+  type           String    // recurring_workflow_pattern, interpreted_rule, client_advice_pattern
+  content        Json
+  sourceCaseId   String?
+  confidence     Float
+  status         String    @default("pending") // pending, approved, rejected, modified
+  validatorId    String?
+  validatedAt    DateTime?
+  rejectionReason String?
+  timestamp      DateTime  @default(now())
+
+  @@index([organizationId, status])
+}
+
+model LearningSignal {
+  id             String   @id @default(uuid())
+  organizationId String
+  type           String   // lawyer_rating, assistance_accepted, correction_submitted
+  source         String
+  strength       Float
+  metadata       Json     @default("{}")
+  timestamp      DateTime @default(now())
+}
+
+// ═════════════════════════════════════════════════════════════
+// RING 3: LEGAL DOMAIN (EGYPTIAN CIVIL LAW CORPUS)
+// ═════════════════════════════════════════════════════════════
+
+model LegalDocument {
+  id         String                        @id @default(uuid())
+  type       String                        // statute, constitutional_article, cassation_ruling
+  title      String                        // e.g. القانون المدني المصري - المادة 147
+  articleNum String?                       // e.g. 147
+  content    String                        // النص الكامل للمادة
+  source     String                        // الجريدة الرسمية / محكمة النقض
+  year       Int?
+  embedding  Unsupported("vector(1536)")?
+  metadata   Json                          @default("{}") // notes, superseded status
+  createdAt  DateTime                      @default(now())
+}
+
+model LegalConcept {
+  id          String   @id @default(uuid())
+  name        String   // e.g. القوة القاهرة, العقد شريعة المتعاقدين, التعويض الاتفاقي
+  category    String   // عقود, التزامات, ملكية
+  definition  String
+  relatedDocs String[] // IDs or article references
+}
+
+// ═════════════════════════════════════════════════════════════
+// RING 7: REASONING, ASSISTANCE, CONFLICTS & SIMILAR CASES
+// ═════════════════════════════════════════════════════════════
+
+model Assistance {
+  id         String   @id @default(uuid())
+  caseId     String
+  query      String
+  response   String   // Markdown response with citations
+  citations  Json     // Verified references to LegalDocument or CaseKnowledge
+  confidence Float
+  feedback   String?  // helpful, inaccurate, hallucination
+  timestamp  DateTime @default(now())
+  case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+model SimilarCase {
+  id            String   @id @default(uuid())
+  caseId        String
+  similarCaseId String
+  similarity    Float
+  reason        String
+  timestamp     DateTime @default(now())
+}
+
+model Conflict {
+  id             String   @id @default(uuid())
+  organizationId String
+  caseId         String?
+  conflictType   String   // legal_contradiction, lawyer_fact_discrepancy, version_mismatch
+  description    String
+  resolved       Boolean  @default(false)
+  resolvedById   String?
+  resolutionNote String?
+  timestamp      DateTime @default(now())
+}
+
+model MissingInfo {
+  id          String   @id @default(uuid())
+  caseId      String
+  type        String   // procedural_document, notification_receipt, counterparty_address
+  description String
+  priority    String   @default("medium")
+  supplied    Boolean  @default(false)
+  timestamp   DateTime @default(now())
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+// ═════════════════════════════════════════════════════════════
+// RING 9: GOVERNANCE, INSIGHTS & IMMUTABLE AUDIT TRAIL
+// ═════════════════════════════════════════════════════════════
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String?
+  action         String   // CREATE_CASE, APPROVE_KNOWLEDGE, RESOLVE_CONFLICT, EXECUTE_AI_ACTION
+  resource       String
+  resourceId     String?
+  details        Json
+  timestamp      DateTime @default(now())
+
+  @@index([organizationId, timestamp])
+}
+
+model Insight {
+  id             String   @id @default(uuid())
+  organizationId String
+  type           String   // case_bottleneck, recurring_conflict_topic, learning_rate
+  title          String
+  description    String
+  metrics        Json
+  priority       String   @default("medium")
+  timestamp      DateTime @default(now())
+}
+
+model AutonomyConfig {
+  id             String       @id @default(uuid())
+  organizationId String
+  capability     String       // case_summary, draft_notification, auto_request_missing_info
+  assignedLevel  String       @default("assist") // observe, assist, execute_with_approval, autonomous
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, capability])
+}
+
+// ═════════════════════════════════════════════════════════════
+// RING 11+: FUTURE MULTI-DOMAIN EXPANSION
+// ═════════════════════════════════════════════════════════════
+
+model Domain {
+  id          String            @id @default(uuid())
+  name        String            // legal, hr, sales, finance
+  config      Json              @default("{}")
+  createdAt   DateTime          @default(now())
+  knowledge   DomainKnowledge[]
+}
+
+model DomainKnowledge {
+  id        String                        @id @default(uuid())
+  domainId  String
+  type      String
+  content   Json
+  embedding Unsupported("vector(1536)")?
+  timestamp DateTime                      @default(now())
+  domain    Domain                        @relation(fields: [domainId], references: [id], onDelete: Cascade)
+}
