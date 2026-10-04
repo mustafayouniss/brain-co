@@ -100,6 +100,48 @@ Provides organization-specific context such as:
 
 ---
 
+## 📁 Project Structure & File Architecture
+
+The repository is organized following an enterprise vertical-slice architecture across all technical domains:
+
+```text
+brain-co/
+├── 📂 .github/                  # CI/CD Workflows & Ring-based Issue Templates
+├── 📂 ai/                       # AI & LLM Engine (LangChain, Prompts, Autonomy Gates)
+│   └── 📂 src/                  # config, engines, prompts, utils
+├── 📂 backend/                  # Backend Modular Monolith / Microservices
+│   ├── 📂 prisma/               # Master Schema (PostgreSQL + pgvector), Migrations & Seeds
+│   └── 📂 src/                  # modules (brain-core, legal, case, knowledge, etc.), middleware, jobs
+├── 📂 data-engineering/         # Data Pipelines & Event Streaming
+│   ├── 📂 airflow/              # Airflow DAGs (Legal Corpus ETL, DWH Aggregations)
+│   ├── 📂 dbt/                  # dbt Models (staging, intermediate, marts)
+│   ├── 📂 lakehouse/            # MinIO Storage Zones (raw, processed, backup)
+│   └── 📂 streaming/            # Kafka / Redis Stream Producers & Consumers
+├── 📂 data-science/             # Data Science, ML & Arabic NLP
+│   ├── 📂 evaluation_data/      # 🔒 Isolated Unseen Evaluation Corpus (Invariant #12)
+│   ├── 📂 models/               # Case Similarity, Case Classification, Arabic NLP
+│   ├── 📂 notebooks/            # Jupyter Notebooks per Ring (01 to 10)
+│   └── 📂 scripts/              # Scraping, Normalization & Evaluation Runners
+├── 📂 docs/                     # System Documentation & Specifications
+│   ├── 📂 adrs/                 # Architecture Decision Records
+│   ├── 📂 architecture/         # High-Level Architecture & 3-Layer Model
+│   ├── 📂 legal-corpus/         # Egyptian Civil Law Index & Casation Precedents
+│   ├── 📂 project-specifications/ # 🏛️ Core Specifications & Original Legal PDFs
+│   ├── 📂 rings/                # Ring-by-Ring Specifications (0 to 11+)
+│   └── 📂 software-analysis/    # Use Cases, Sequence & Domain Class Diagrams
+├── 📂 frontend/                 # React 18 + Vite + Tailwind RTL Web Dashboard
+│   └── 📂 src/                  # components (brain, legal, case workspace, assistance), pages
+├── 📂 infrastructure/           # Docker, Kubernetes, Nginx & Database Scripts
+├── 📂 mobile/                   # Flutter 3.x Mobile App (Clean Architecture + BLoC)
+│   └── 📂 lib/                  # core (offline sync, biometrics, RTL) & features (case, legal chat)
+├── 📂 shared/                   # Cross-stack Types, Contracts & Validators (National ID)
+├── 📂 tests/                    # Unit, Isolation (Case Isolation), Invariant & E2E Tests
+├── 📄 docker-compose.yml        # PostgreSQL+pgvector, Redis, Neo4j, MinIO
+└── 📄 README.md                 # Project Overview
+```
+
+---
+
 ## 🔄 Knowledge Lifecycle
 
 brain-co distinguishes between what the system observes and what it actually learns.
