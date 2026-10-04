@@ -1,2 +1,312 @@
-# brain-co
-An enterprise intelligence platform that transforms organizational knowledge and experience into a reusable, governed AI brain
+# 🧠 brain-co
+
+### Enterprise Intelligence Platform
+
+**brain-co** is an enterprise intelligence platform designed to turn an organization's knowledge, experience, workflows, and systems into a reusable and continuously improving **Organizational Brain**.
+
+Instead of building a separate AI system for every industry, brain-co follows a reusable architecture where a **General Brain** can be specialized through domain knowledge and customized with organization-specific intelligence.
+
+> **One Brain → Multiple Domains → Multiple Organizations → Organization-Specific Intelligence**
+
+---
+
+## 🎯 Vision
+
+Every organization has valuable knowledge trapped inside:
+
+* Employees
+* Documents
+* Conversations
+* Business processes
+* Cases
+* CRM / ERP systems
+* Historical decisions
+* Organizational experience
+
+**brain-co** aims to transform this scattered knowledge into governed organizational memory and intelligence.
+
+---
+
+## 🏗️ Core Architecture
+
+The platform is built around three distinct layers:
+
+```text
+┌─────────────────────────────────────┐
+│           GENERAL BRAIN             │
+│     Reusable Intelligence Layer     │
+└──────────────────┬──────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────┐
+│       DOMAIN INTELLIGENCE           │
+│ Legal • Sales • HR • Finance • ...  │
+└──────────────────┬──────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────┐
+│     ORGANIZATION INTELLIGENCE       │
+│ Policies • Workflows • Cases • Data │
+└─────────────────────────────────────┘
+```
+
+### General Brain
+
+Provides reusable intelligence capabilities such as:
+
+* Perception
+* Observation
+* Knowledge
+* Memory
+* Retrieval
+* Reasoning
+* Context
+* Learning
+* Validation & Governance
+* Permissions
+* Provenance
+* Audit
+* Insight
+* Workflow & Actions
+* Autonomy Control
+
+### Domain Intelligence
+
+Provides domain-specific knowledge, terminology, workflows, reasoning patterns, and tools.
+
+The first implementation focuses on:
+
+**Legal Domain — Egyptian Civil Law**
+
+Legal is treated as the first domain specialization rather than a separate "Legal Brain".
+
+### Organization Intelligence
+
+Provides organization-specific context such as:
+
+* Policies
+* Workflows
+* Roles & permissions
+* Employees
+* Internal procedures
+* Documents
+* Cases
+* Conversations
+* Historical work
+* Decisions
+* Business rules
+* Existing systems
+* Validated organizational knowledge
+
+---
+
+## 🔄 Knowledge Lifecycle
+
+brain-co distinguishes between what the system observes and what it actually learns.
+
+```text
+Raw Observation
+       ↓
+Structured Observation
+       ↓
+Extracted Fact
+       ↓
+Knowledge Candidate
+       ↓
+Human Validation
+       ↓
+Trusted Knowledge
+       ↓
+Persistent Memory
+       ↓
+Retrieval
+       ↓
+Reasoning
+       ↓
+Decision Support / Action
+```
+
+Not every message or observation becomes organizational knowledge.
+
+Human validation and governance remain fundamental parts of the system.
+
+---
+
+## ⚖️ First Domain: Legal
+
+The first implementation of brain-co targets **Egyptian Civil Law**.
+
+The Legal Domain includes:
+
+* Legal knowledge
+* Legal terminology
+* Legal taxonomy
+* Legal procedures
+* Legal documents
+* Public historical cases
+* Legal reasoning patterns
+* Case management
+* Legal research
+* Document review
+* Client consultation
+* Contract review
+
+The Legal implementation serves as a real-world proof that the reusable General Brain architecture can operate in a high-stakes domain.
+
+---
+
+## 💬 Communication & Integrations
+
+The platform is designed to observe and integrate with organizational systems and communication channels such as:
+
+* WhatsApp
+* CRM
+* Email
+* Documents
+* ERP systems
+* Other external systems
+
+For communication channels such as WhatsApp, messages are captured in real time and processed asynchronously before being associated with the appropriate organizational and case context.
+
+---
+
+## 🔐 Governance & Security
+
+brain-co follows a human-governed intelligence model.
+
+Key principles include:
+
+* Role-based access control
+* Server-side permission enforcement
+* Permission-aware retrieval
+* Organization isolation
+* Case isolation
+* Knowledge provenance
+* Validation history
+* Auditability
+* Human-in-the-loop governance
+* Controlled AI autonomy
+
+The system is designed so that AI cannot retrieve information that the current user is not authorized to access.
+
+---
+
+## 🤖 AI Autonomy
+
+Autonomy is progressive rather than assumed.
+
+```text
+Level 0 → Observe
+Level 1 → Assist
+Level 2 → Execute with Human Approval
+Level 3 → Authorized Automation
+```
+
+The initial V1 focuses primarily on **Observation and Assistance**.
+
+---
+
+## 🧪 Evaluation
+
+AI capabilities are not considered complete simply because they produce impressive outputs.
+
+The project includes measurable evaluation strategies covering areas such as:
+
+* Retrieval quality
+* Classification
+* Document understanding
+* Similarity
+* End-to-end assistance
+* Human satisfaction
+* Task completion
+* Time saved
+
+Unseen evaluation data is kept separate from development and training data.
+
+---
+
+## 🛠️ Development Principles
+
+brain-co follows several architectural principles:
+
+1. **One General Brain**
+2. **Reusability First**
+3. **Clear separation between General, Domain, and Organization intelligence**
+4. **Observation ≠ Knowledge**
+5. **Human Governance**
+6. **Strict Case Isolation**
+7. **Permission-aware intelligence**
+8. **Provenance & Auditability**
+9. **Gradual Autonomy**
+10. **Architecture before implementation**
+
+---
+
+## 📚 Project Documentation
+
+The repository contains the project's technical and architectural documentation, including:
+
+* Project Constitution
+* Requirements
+* System Architecture
+* Data Architecture
+* AI Architecture
+* API Contracts
+* Domain Specifications
+* Database / ERD
+* Architecture Decision Records (ADRs)
+* Testing & Evaluation
+* Deployment Documentation
+
+The **Project Constitution** is the highest-level source of truth for the project, followed by approved architecture decisions, specifications, contracts, and implementation documentation.
+
+---
+
+## 🚀 Long-Term Direction
+
+The long-term goal is to demonstrate that the same General Brain infrastructure can support multiple domains without rebuilding the core intelligence layer.
+
+```text
+             ONE GENERAL BRAIN
+                     │
+       ┌─────────────┼─────────────┐
+       ▼             ▼             ▼
+     LEGAL          SALES          HR
+       │             │             │
+       ▼             ▼             ▼
+   Organization  Organization  Organization
+```
+
+Future domain specializations may include:
+
+* Sales
+* Customer Support
+* HR
+* Finance
+* Real Estate
+* Other enterprise domains
+
+---
+
+## 🎓 Graduation Project
+
+**brain-co** is a graduation project developed by students of the **Faculty of Computers and Data Science**.
+
+The project follows a ring-based development roadmap spanning:
+
+**Frontend • Backend • AI • Data Science • Integrations**
+
+---
+
+## 👥 Team
+
+**brain-co Team**
+
+Faculty of Computers and Data Science
+Graduation Project 2026–2027
+
+---
+
+## 📄 License
+
+This project is currently developed as an academic graduation project.
