@@ -337,6 +337,7 @@ The project follows a ring-based development roadmap spanning:
 ## 👥 Team
 
 **brain-co Team**<br>
+Mohamed Alaa<br>
 Yousef Mohamed Hamada<br>
 Faculty of Computers and Data Science<br>
 Graduation Project 2026–2027
