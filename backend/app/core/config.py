@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "orgbrain_legal"
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
+    POSTGRES_TEST_DB: str = "orgbrain_legal_test"
+
+    @property
+    def TEST_DATABASE_URL(self) -> str:
+        """Connection URL for the isolated test database."""
+        return (
+            f"postgresql+psycopg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_TEST_DB}"
+        )
 
 
 settings = Settings()
