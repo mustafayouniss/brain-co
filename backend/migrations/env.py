@@ -19,8 +19,11 @@ from app.db.session import Base
 # access to the values within the .ini file in use.
 config = context.config
 
-# Override database URL with application settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Tests inject "database_url" into config.attributes to point Alembic at the
+# test database.  When that key is absent (all normal CLI invocations), fall
+# back to the application's DATABASE_URL so dev behaviour is unchanged.
+_db_url = config.attributes.get("database_url") or settings.DATABASE_URL
+config.set_main_option("sqlalchemy.url", _db_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

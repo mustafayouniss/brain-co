@@ -19,19 +19,21 @@
 - [x] **T1** — `GET /health` returning `{"status": "ok"}` + test using FastAPI `TestClient`. Mounted in `app/main.py`.
 - [x] **T2** — `git init`, verified `.gitignore` excludes `.env`/`.venv`/`__pycache__`/`.pytest_cache`, first local commit. Added safety and logging rules to `AGENTS.md`.
 
+## What's Done (continued)
+- [x] **T3** — Test setup: `pytest.ini`, `conftest.py` (safety guard + `alembic upgrade head` provisioning + per-test rollback session), smoke test, safety guard unit tests. Both databases verified in Postgres; dev DB has only `alembic_version`.
+
 ## What's Next (Ring 0 — remaining tasks, in order)
-- [ ] **T3** — Test setup: `pytest` config, `conftest.py`, tests never touch the development database. *(Confirm: separate test database `orgbrain_legal_test`, created and migrated by test setup.)*
 - [ ] **T4** — API structure: versioned prefix `/api/v1`, routers under `app/api/`, one consistent JSON error format, `GET /api/v1/health/db` that runs `SELECT 1`.
-- [ ] **T5** — `users` table + SQLAlchemy model + Alembic migration. *(Fields: id UUID, email unique, full_name, hashed_password, role, is_active, created_at. No org fields.)*
-- [ ] **T6** — Security utilities: password hashing, JWT create/verify, with unit tests. *(Hashing library not chosen — propose options in plan. PyJWT is fixed.)*
-- [ ] **T7** — Auth endpoints: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`. *(Confirm: access token only for now; no refresh tokens.)*
-- [ ] **T8** — Authorization dependencies: `get_current_user`, `require_admin`, and one admin-only sample endpoint.
-- [ ] **T9** — First admin: seed command (not a public endpoint) reading credentials from `.env`. *(No public sign-up; admin creates employee accounts.)*
-- [ ] **T10** — Frontend contract: `docs/api/auth.md` with endpoints, request/response examples, error format, status codes. *(Generated from the real tested API, not from memory.)*
-- [ ] **T11** — CI: GitHub Actions workflow running pytest against a Postgres service. *(Only after T2 is pushed.)*
+- [ ] **T5** — `users` table + SQLAlchemy model + Alembic migration.
+- [ ] **T6** — Security utilities: password hashing, JWT create/verify, with unit tests.
+- [ ] **T7** — Auth endpoints: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`.
+- [ ] **T8** — Authorization dependencies: `get_current_user`, `require_admin`, admin-only sample endpoint.
+- [ ] **T9** — First admin: seed command (not a public endpoint).
+- [ ] **T10** — Frontend contract: `docs/api/auth.md`.
+- [ ] **T11** — CI: GitHub Actions. *(Only after OPEN-7 is decided.)*
 
 ## Known Issues
-- pytest shows `StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated; install httpx2 instead.` Not handled yet. To be resolved in T3 after checking official docs. Do not install anything without a plan.
+- `StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated; install httpx2 instead.` Starlette now prefers `httpx2`; `httpx` still works. Source: https://github.com/encode/starlette/issues/2826. No packages will be changed without an approved plan.
 
 ## Broken / Blockers
 - None.
