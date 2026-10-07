@@ -41,3 +41,4 @@ Documentation must only describe things that actually happened and were verified
 - Never read docs/constitution.md in full; search for the section heading you need.
 - Do not re-read a file you already read in this chat.
 - Keep docs/progress.md short: current status, next tasks, known issues only.
+- Append to journal and log files only with `Add-Content` (PowerShell) or an append-only edit. NEVER recreate or overwrite an existing file after reading only part of it.
