@@ -341,6 +341,7 @@ The project follows a ring-based development roadmap spanning:
 Mohamed Alaa<br>
 Yousef Mohamed Hamada<br>
 Manar Mohammed Abdulkarim<br>
+Lamia Araby Abouzeid<br>
 Faculty of Computers and Data Science<br>
 Graduation Project 2026–2027
 
