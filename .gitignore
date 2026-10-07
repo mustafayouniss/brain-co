@@ -1,0 +1,24 @@
+# Virtual environments
+.venv/
+backend/.venv/
+venv/
+ENV/
+
+# Environment variables
+.env
+*.env
+!.env.example
+
+# Byte-compiled / optimized / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Docker volumes / database data
+pgdata/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
