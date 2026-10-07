@@ -111,8 +111,8 @@ def test_engine():
     """
     db_name = settings.POSTGRES_TEST_DB
 
-    # SAFETY GUARD — refuse if the name does not end with '_test'.
-    assert_safe_test_database(db_name)
+    # SAFETY GUARD — refuse if the name does not end with '_test' or matches dev DB.
+    assert_safe_test_database(db_name, settings.POSTGRES_DB)
 
     _ensure_test_database_exists(db_name)
     _run_migrations(settings.TEST_DATABASE_URL)
