@@ -30,3 +30,8 @@ Read, in this order: AGENTS.md, docs/progress.md, docs/decisions.md, docs/vision
 5. Explain in plain language in docs/how-it-works.md what was added.
 6. Anything important created outside the repo (plans, notes) must be copied into docs/ before the task ends.
 Documentation must only describe things that actually happened and were verified. Never invent. If unsure, write "UNVERIFIED".
+
+## Safety and logging rules
+- Log every command that changes anything (install, create/move/delete, docker, alembic, git) in docs/journal/<today>.md: time, exact command, result.
+- Never run these without first showing me the exact command and waiting for my OK: deleting files or folders, `docker compose down -v`, `docker volume rm`, `git push`, `git reset --hard`, `git clean`, any force flag, anything outside D:\Study\projects\OrgBrain, changing global or system settings.
+- Finish every task with git status, then a commit with a clear message. Never commit .env or .venv.
