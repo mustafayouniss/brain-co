@@ -17,9 +17,9 @@
 - [x] Verified and locked `AGENTS.md` start/end-of-task rules and behavioral guidelines.
 - [x] Updated environment setup docs (`docs/environment.md`), journal (`docs/journal/2026-10-06.md`), and verification log (`docs/verification-log.md`) to use `uv pip install` command syntax for uv-managed venv.
 - [x] **T1** — `GET /health` returning `{"status": "ok"}` + test using FastAPI `TestClient`. Mounted in `app/main.py`.
+- [x] **T2** — `git init`, verified `.gitignore` excludes `.env`/`.venv`/`__pycache__`/`.pytest_cache`, first local commit. Added safety and logging rules to `AGENTS.md`.
 
 ## What's Next (Ring 0 — remaining tasks, in order)
-- [ ] **T2** — Git: `git init`, verify `.gitignore`, first commit. *(Karim creates a private GitHub repo and pushes himself.)*
 - [ ] **T3** — Test setup: `pytest` config, `conftest.py`, tests never touch the development database. *(Confirm: separate test database `orgbrain_legal_test`, created and migrated by test setup.)*
 - [ ] **T4** — API structure: versioned prefix `/api/v1`, routers under `app/api/`, one consistent JSON error format, `GET /api/v1/health/db` that runs `SELECT 1`.
 - [ ] **T5** — `users` table + SQLAlchemy model + Alembic migration. *(Fields: id UUID, email unique, full_name, hashed_password, role, is_active, created_at. No org fields.)*
@@ -30,6 +30,8 @@
 - [ ] **T10** — Frontend contract: `docs/api/auth.md` with endpoints, request/response examples, error format, status codes. *(Generated from the real tested API, not from memory.)*
 - [ ] **T11** — CI: GitHub Actions workflow running pytest against a Postgres service. *(Only after T2 is pushed.)*
 
+## Known Issues
+- pytest shows `StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated; install httpx2 instead.` Not handled yet. To be resolved in T3 after checking official docs. Do not install anything without a plan.
 
 ## Broken / Blockers
 - None.
