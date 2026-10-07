@@ -21,6 +21,7 @@
 
 ## What's Done (continued)
 - [x] **T3** — Test setup: `pytest.ini`, `conftest.py` (safety guard + `alembic upgrade head` provisioning + per-test rollback session), smoke test, safety guard unit tests. Both databases verified in Postgres; dev DB has only `alembic_version`.
+- [x] **T3b** — Test setup hardening: extended `assert_safe_test_database` to require `dev_db_name` and refuse equality with dev database; added AGENTS.md rule that tests must only use fixtures; added scanner test (`test_no_raw_db_in_tests.py`) forbidding `settings.DATABASE_URL` and `create_engine(` in test files; installed and pinned `httpx2==2.13.1` (test dependency), eliminating `StarletteDeprecationWarning`.
 
 ## What's Next (Ring 0 — remaining tasks, in order)
 - [ ] **T4** — API structure: versioned prefix `/api/v1`, routers under `app/api/`, one consistent JSON error format, `GET /api/v1/health/db` that runs `SELECT 1`.
@@ -33,7 +34,7 @@
 - [ ] **T11** — CI: GitHub Actions. *(Only after OPEN-7 is decided.)*
 
 ## Known Issues
-- `StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated; install httpx2 instead.` Starlette now prefers `httpx2`; `httpx` still works. Source: https://github.com/encode/starlette/issues/2826. No packages will be changed without an approved plan.
+- None. (Starlette prefers httpx2; httpx still worked but emitted StarletteDeprecationWarning; resolved by installing httpx2==2.13.1 (https://pypi.org/project/httpx2/, maintained by Pydantic, source github.com/pydantic/httpx2). Earlier mention of issue 2826 was UNVERIFIED and removed.)
 
 ## Broken / Blockers
 - None.

@@ -14,6 +14,7 @@ If they conflict, the higher one wins. If something isn't in any of them, STOP a
 - Never invent library APIs. Check the installed version / official docs. Pin versions in requirements.txt.
 - Every change ships with tests. Run them and show the real output. Never say "tests pass" without running them.
 - Every schema change = an Alembic migration. No manual DB edits.
+- Tests must only use the test_engine and db_session fixtures. Never create an engine or connection from the development DATABASE_URL inside tests.
 - Permissions are enforced server-side. Case data is always filtered by case_id.
 - If unsure, say "I don't know" and list what you'd need to check.
 - Never mark anything as done or passing without showing evidence in this chat. If you did not verify it, write UNVERIFIED.
