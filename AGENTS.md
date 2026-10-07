@@ -35,3 +35,9 @@ Documentation must only describe things that actually happened and were verified
 - Log every command that changes anything (install, create/move/delete, docker, alembic, git) in docs/journal/<today>.md: time, exact command, result.
 - Never run these without first showing me the exact command and waiting for my OK: deleting files or folders, `docker compose down -v`, `docker volume rm`, `git push`, `git reset --hard`, `git clean`, any force flag, anything outside D:\Study\projects\OrgBrain, changing global or system settings.
 - Finish every task with git status, then a commit with a clear message. Never commit .env or .venv.
+
+## Token-saving rules
+- Never read whole files that keep growing: docs/journal/* and docs/verification-log.md. Read only the last 40 lines of the latest journal, and APPEND to it.
+- Never read docs/constitution.md in full; search for the section heading you need.
+- Do not re-read a file you already read in this chat.
+- Keep docs/progress.md short: current status, next tasks, known issues only.

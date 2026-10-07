@@ -77,7 +77,9 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
 - README states: `backend/prisma` (Node/TypeScript scaffold), React 18 + Vite + Tailwind web dashboard, Flutter mobile app, docker-compose with PostgreSQL + pgvector, Redis, Neo4j, MinIO. GitHub shows TypeScript as 94.9% of the code.
 - README autonomy levels are 0-3 (Observe, Assist, Execute with approval, Authorized automation), the same as `vision.md`.
 - README puts the Constitution under `docs/project-specifications/` and ring specs under `docs/rings/` (0 to 11+), ADRs under `docs/adrs/`.
-- UNVERIFIED: the actual contents of those folders. Only the README text was seen.
+- Seen in a screenshot (2026-10-07): the repo's `backend/` folder contains `prisma/`, `src/` and `package.json`, i.e. a Node scaffold, as the README said. Karim has access to the repo; whether he has read or write permission is not stated.
+- UNVERIFIED: the contents of those files and of the other folders.
+- Plan for when code is pushed (OPEN-7): use a new branch (not `main`) so the team's existing work is not overwritten, then merge when Karim decides.
 
 ---
 
@@ -87,3 +89,4 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
 - 2026-10-06: ring numbering settled (D-010); OPEN-1 removed.
 - 2026-10-06: OPEN-5 corrected (earlier text wrongly named a "Flutter teammate" and an auth start date without a source); OPEN-7 and "Team repository" section added after reviewing the team README.
 - 2026-10-06: D-011 added (Karim owns backend decisions, no team approval needed); the short-lived OPEN-6 was removed.
+- 2026-10-07: "Team repository" section updated from a screenshot of the team's `backend/` folder; branch plan noted for OPEN-7.
