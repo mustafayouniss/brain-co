@@ -1,7 +1,7 @@
 # 🧠 brain-co
 
 ### Enterprise Intelligence Platform
-                                                                   **Empower Your Organization with Our Intelligence Layer**
+#### Empower Your Organization with Our Intelligence Layer. 
 
 **brain-co** is an enterprise intelligence platform designed to turn an organization's knowledge, experience, workflows, and systems into a reusable and continuously improving **Organizational Brain**.
 
