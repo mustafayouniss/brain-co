@@ -1,0 +1,32 @@
+# Organizational Brain — Legal V1 (backend)
+
+## Stack (non-negotiable)
+Python 3.12, FastAPI, PostgreSQL (+ pgvector), SQLAlchemy 2.0, Alembic,
+Pydantic v2, PyJWT, pytest. Do NOT use Node, Express, Prisma, or Neo4j.
+
+## Source of truth order
+1. docs/decisions.md  2. docs/rings/<current ring>.md  3. docs/constitution.md
+If they conflict, the higher one wins. If something isn't in any of them, STOP and ask. Never invent requirements.
+
+## Rules of behavior
+- Plan first. Write the plan, wait for my approval, then code.
+- One small task per turn. Don't touch files outside the task.
+- Never invent library APIs. Check the installed version / official docs. Pin versions in requirements.txt.
+- Every change ships with tests. Run them and show the real output. Never say "tests pass" without running them.
+- Every schema change = an Alembic migration. No manual DB edits.
+- Permissions are enforced server-side. Case data is always filtered by case_id.
+- If unsure, say "I don't know" and list what you'd need to check.
+- Never mark anything as done or passing without showing evidence in this chat. If you did not verify it, write UNVERIFIED.
+- Cite the Constitution by section heading only, never by page or line number. Do not read the whole Constitution again; open the specific section you need.
+
+## Start of every task
+Read, in this order: AGENTS.md, docs/progress.md, docs/decisions.md, docs/vision.md, then the current ring spec in docs/rings/. Don't start before reading.
+
+## End of every task (task is NOT done until this is finished)
+1. Update docs/progress.md (done / next / broken).
+2. Add an entry to docs/journal/ for today: what was done, which commands were run, what went wrong and how it was fixed.
+3. If folders, tables, or endpoints changed, update docs/architecture.md.
+4. If a decision was made, add it to docs/decisions.md.
+5. Explain in plain language in docs/how-it-works.md what was added.
+6. Anything important created outside the repo (plans, notes) must be copied into docs/ before the task ends.
+Documentation must only describe things that actually happened and were verified. Never invent. If unsure, write "UNVERIFIED".
