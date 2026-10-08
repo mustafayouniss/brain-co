@@ -18,8 +18,8 @@ Every folder in the repository and its single-line designated purpose:
 - `backend/app/`: Primary FastAPI application package containing all backend logic and modules.
 - `backend/app/api/`: HTTP API routes, endpoint handlers, dependency providers (`deps.py`), and versioned routers (`v1/`).
 - `backend/app/core/`: Application settings, environment variable loaders, and unified error handling (`errors.py`).
-- `backend/app/db/`: Database connection engine setup, base model declarations, session factory utilities, and test safety guards (`test_utils.py`).
-- `backend/app/models/`: SQLAlchemy 2.0 ORM declarative database models.
+- `backend/app/db/`: Database connection engine (hide_parameters=True), declarative Base (`base.py`), session factory, and test safety guards (`test_utils.py`).
+- `backend/app/models/`: SQLAlchemy 2.0 ORM declarative models. Currently: `user.py` (User entity with case-insensitive email uniqueness and role check constraint).
 - `backend/app/schemas/`: Pydantic v2 data models for input validation, request parsing, and response serialization.
 - `backend/app/services/`: Reusable domain business logic and data processing operations decoupled from API endpoints.
 - `backend/migrations/`: Alembic database schema migration environment and runners.
@@ -117,4 +117,12 @@ The following versions were deployed, executed, and verified:
   - `test_db_isolation.py`: Smoke test asserting current database ends with `_test` and contains `vector` extension.
   - `test_safety_guard.py`: Unit tests for `assert_safe_test_database`.
   - `test_no_raw_db_in_tests.py`: Static guardrail scanner ensuring test files never access development DATABASE_URL.
+  - `test_user_model.py`: Tests for `User` model — UUID generation, `is_active` default, ORM email normalisation, duplicate email (both ORM and raw SQL bypass), invalid role, null hashed_password, and `engine.hide_parameters`.
+
+### Database Tables (via Alembic)
+| Revision | Table | Description |
+|---|---|---|
+| `6dd2ff08b0bb` | — | Enables `pgvector` extension |
+| `778be99882b6` | `users` | User accounts; UUID PK, case-insensitive unique email, VARCHAR+CHECK role, timezone-aware `created_at` |
+
 
