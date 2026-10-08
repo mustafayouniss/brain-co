@@ -87,3 +87,13 @@ Each detail object contains:
 ## 5. Header Preservation
 
 Custom headers attached to `HTTPException` instances (such as `WWW-Authenticate`, `Retry-After`, or custom tracking headers) are preserved on the outgoing response.
+
+---
+
+## 6. Error Message Content Policy
+
+**Error messages (including custom validator messages) must never contain the submitted value.**
+
+- This applies to all layers: ORM validators, HTTP handlers, validation error details, and any custom exception message.
+- Reason: submitted values may contain passwords, tokens, PII, or attacker-controlled input. Echoing them in error responses creates security and privacy vulnerabilities.
+- The `details` list in 422 errors exposes `field` (location), `message` (description), and `type` (validator kind) only. The raw `input` field from Pydantic's error output is stripped before returning.

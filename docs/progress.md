@@ -23,9 +23,9 @@
 - [x] **T3** — Test setup: `pytest.ini`, `conftest.py` (safety guard + `alembic upgrade head` provisioning + per-test rollback session), smoke test, safety guard unit tests. Both databases verified in Postgres; dev DB has only `alembic_version`.
 - [x] **T3b** — Test setup hardening: extended `assert_safe_test_database` to require `dev_db_name` and refuse equality with dev database; added AGENTS.md rule that tests must only use fixtures; added scanner test (`test_no_raw_db_in_tests.py`) forbidding `settings.DATABASE_URL` and `create_engine(` in test files; installed and pinned `httpx2==2.13.1` (test dependency), eliminating `StarletteDeprecationWarning`.
 - [x] **T4** — API structure: versioned router `/api/v1` (`api_router` in `app/main.py`), `app/api/deps.py` with `get_db`, `GET /api/v1/health/db` (runs `SELECT 1`, 503 on error without secret leaks), unified JSON error handling (`register_exception_handlers`), tests with isolated fixtures and throwaway app, `docs/api/conventions.md`.
+- [x] **T5** — `users` table: declarative `Base` (`app/db/base.py`), `User` model (UUID PK, case-insensitive email via `lower(email)` unique index, VARCHAR+CHECK role, `created_at` TIMESTAMPTZ, `hide_parameters=True` on engine), Alembic migration `778be99882b6`, migration lifecycle proved (upgrade/downgrade/upgrade, `alembic check` reports no differences), `docs/data-model.md`.
 
 ## What's Next (Ring 0 — remaining tasks, in order)
-- [ ] **T5** — `users` table + SQLAlchemy model + Alembic migration.
 - [ ] **T6** — Security utilities: password hashing, JWT create/verify, with unit tests.
 - [ ] **T7** — Auth endpoints: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`.
 - [ ] **T8** — Authorization dependencies: `get_current_user`, `require_admin`, admin-only sample endpoint.
