@@ -343,6 +343,7 @@ Yousef Mohamed Hamada<br>
 Manar Mohammed Abdulkarim<br>
 Lamia Araby Abouzeid<br>
 Seifelden Khaled<br>
+Wafaa Galal Sadek
 Faculty of Computers and Data Science<br>
 Graduation Project 2026–2027
 
