@@ -1,4 +1,6 @@
 from pathlib import Path
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -21,6 +23,18 @@ class Settings(BaseSettings):
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_TEST_DB: str = "orgbrain_legal_test"
+
+    SECRET_KEY: str = "change-this-placeholder-secret-key-at-least-32-chars"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters long")
+        if v.startswith("change-this"):
+            raise ValueError("SECRET_KEY must not use placeholder value")
+        return v
 
     @property
     def TEST_DATABASE_URL(self) -> str:

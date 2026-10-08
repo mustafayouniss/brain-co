@@ -51,6 +51,16 @@ This guide explains how all the pieces of our backend setup fit together. If you
 - **The Analogy**: A standard return receipt from a store. Regardless of whether you return shoes, groceries, or electronics, the receipt always has the exact same layout: store name, barcode, reason, and timestamp.
 - **Why we need it**: Frontend apps and mobile apps don't have to guess how errors look. They can check `error.code` consistently across all endpoints.
 
+### 10. Password Hashing (Argon2id)
+- **Plain English**: A one-way mathematical transformation that scrambles a plain text password into an unreadable fingerprint, with unique random "salt" so identical passwords never look alike.
+- **The Analogy**: Running fruit through a blender. You can turn fresh strawberries into a smoothie, but it is physically impossible to turn the smoothie back into intact strawberries.
+- **Why we need it**: If an attacker ever stole the database, they would only get the scrambled smoothies, never the real passwords.
+
+### 11. JWT Access Tokens (JSON Web Tokens)
+- **Plain English**: A digitally signed, tamper-proof badge given to a user after they log in. The badge contains their user ID (`sub`) and expiration timestamp (`exp`).
+- **The Analogy**: An amusement park wristband stamped with an expiration time. Every ride operator can inspect the stamp to confirm it hasn't expired without having to look up the customer in the main ticket office every time.
+- **Why we need it**: It enables fast, secure, stateless API authentication without repeatedly querying the database on every single request.
+
 ---
 
 ## 2. Commands You Will Use Every Day
