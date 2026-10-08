@@ -1,4 +1,4 @@
-# 🧠 brain-co
+# *** 🧠 brain-co ***
 
 ### Enterprise Intelligence Platform
 #### Empower Your Organization with Our Intelligence Layer. 
