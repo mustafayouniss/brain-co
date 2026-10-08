@@ -17,7 +17,7 @@ Every folder in the repository and its single-line designated purpose:
 - `backend/.venv/`: Isolated Python 3.12 virtual environment containing installed project dependencies.
 - `backend/app/`: Primary FastAPI application package containing all backend logic and modules.
 - `backend/app/api/`: HTTP API routes, endpoint handlers, dependency providers (`deps.py`), and versioned routers (`v1/`).
-- `backend/app/core/`: Application settings, environment variable loaders, and unified error handling (`errors.py`).
+- `backend/app/core/`: Application settings, environment variable loaders, unified error handling (`errors.py`), and cryptographic/security utilities (`security.py`).
 - `backend/app/db/`: Database connection engine (hide_parameters=True), declarative Base (`base.py`), session factory, and test safety guards (`test_utils.py`).
 - `backend/app/models/`: SQLAlchemy 2.0 ORM declarative models. Currently: `user.py` (User entity with case-insensitive email uniqueness and role check constraint).
 - `backend/app/schemas/`: Pydantic v2 data models for input validation, request parsing, and response serialization.
@@ -39,12 +39,13 @@ The application manages settings and database sessions through a decoupled, dete
 [backend/app/core/config.py]
   - Resolves root path: Path(__file__).resolve().parent.parent.parent.parent / ".env"
   - Instantiates Pydantic Settings class (`settings`)
+  - Validates SECRET_KEY (min length 32, no placeholder)
   - Exposes `settings.DATABASE_URL` and `settings.TEST_DATABASE_URL`
           │
           ▼
 [backend/app/db/session.py]
   - Imports `settings` from `app.core.config`
-  - Initializes sync engine: `create_engine(str(settings.DATABASE_URL), pool_pre_ping=True)`
+  - Initializes sync engine: `create_engine(str(settings.DATABASE_URL), pool_pre_ping=True, hide_parameters=True)`
   - Creates sessionmaker factory: `SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)`
           │
           ▼
@@ -73,7 +74,7 @@ Alembic migrations connect to PostgreSQL through the same unified application co
 
 ---
 
-## 4. Database Engine and Container Image Versions
+## 4. Database Engine, Security and Dependency Versions
 
 The following versions were deployed, executed, and verified:
 
@@ -83,6 +84,8 @@ The following versions were deployed, executed, and verified:
 - **SQLAlchemy**: `2.0.54` (pinned in `backend/requirements.txt`)
 - **Psycopg**: `3.3.6` (binary driver `psycopg-binary==3.3.6`)
 - **Alembic**: `1.20.0`
+- **Password Hashing**: `argon2-cffi==25.1.0` (Argon2id)
+- **JWT Provider**: `pyjwt==2.15.1` (HS256)
 - **HTTPX2**: `2.13.1` (pinned test dependency)
 
 ---
@@ -95,6 +98,15 @@ The following versions were deployed, executed, and verified:
   - Mounts `api_router` from `app.api.v1` under `/api/v1`.
 - `backend/app/api/v1/health.py`:
   - `GET /api/v1/health/db`: Database health check running `SELECT 1` via `get_db`. Returns `{"status": "ok", "database": "up"}` on success, or 503 `SERVICE_UNAVAILABLE` on failure.
+
+### Security Architecture
+- `backend/app/core/security.py`:
+  - `hash_password(plain)`: Argon2id password hashing with length validation (1-128 chars).
+  - `verify_password(plain, hashed)`: Safe verification returning `bool` without raising on malformed hashes.
+  - `verify_dummy_password(plain)`: Precomputed dummy hash verification for unknown users to defeat timing attacks.
+  - `password_needs_rehash(hashed)`: Detection of outdated hashing parameters.
+  - `create_access_token(subject)`: Generates HS256 JWT containing strictly `sub`, `iat`, and `exp`.
+  - `decode_access_token(token)`: Validates signature and required claims (`sub`, `iat`, `exp`), raising uniform `TokenSecurityError`.
 
 ### Error Handling Architecture
 - `backend/app/core/errors.py`:
@@ -118,6 +130,7 @@ The following versions were deployed, executed, and verified:
   - `test_safety_guard.py`: Unit tests for `assert_safe_test_database`.
   - `test_no_raw_db_in_tests.py`: Static guardrail scanner ensuring test files never access development DATABASE_URL.
   - `test_user_model.py`: Tests for `User` model — UUID generation, `is_active` default, ORM email normalisation, duplicate email (both ORM and raw SQL bypass), invalid role, null hashed_password, and `engine.hide_parameters`.
+  - `test_security.py`: Unit tests for password hashing, safe verification, dummy hash timing mitigation, rehash checking, JWT round-trip/expiry/tampering/alg-none rejection, and SECRET_KEY validation.
 
 ### Database Tables (via Alembic)
 | Revision | Table | Description |
