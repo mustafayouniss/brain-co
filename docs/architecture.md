@@ -16,15 +16,15 @@ Every folder in the repository and its single-line designated purpose:
 - `backend/`: Python application workspace containing source code, migrations, virtual environment, and dependency manifests.
 - `backend/.venv/`: Isolated Python 3.12 virtual environment containing installed project dependencies.
 - `backend/app/`: Primary FastAPI application package containing all backend logic and modules.
-- `backend/app/api/`: HTTP API routes, endpoint handlers, and request controllers.
-- `backend/app/core/`: Application settings, environment variable loaders, and core cross-cutting configurations.
-- `backend/app/db/`: Database connection engine setup, base model declarations, and session factory utilities.
+- `backend/app/api/`: HTTP API routes, endpoint handlers, dependency providers (`deps.py`), and versioned routers (`v1/`).
+- `backend/app/core/`: Application settings, environment variable loaders, and unified error handling (`errors.py`).
+- `backend/app/db/`: Database connection engine setup, base model declarations, session factory utilities, and test safety guards (`test_utils.py`).
 - `backend/app/models/`: SQLAlchemy 2.0 ORM declarative database models.
 - `backend/app/schemas/`: Pydantic v2 data models for input validation, request parsing, and response serialization.
 - `backend/app/services/`: Reusable domain business logic and data processing operations decoupled from API endpoints.
 - `backend/migrations/`: Alembic database schema migration environment and runners.
 - `backend/migrations/versions/`: Individual revision scripts representing historical database schema transformations.
-- `backend/tests/`: Automated pytest test suites covering unit, integration, and endpoint behaviors.
+- `backend/tests/`: Automated pytest test suites covering unit, integration, and endpoint behaviors with isolated test DB fixtures.
 
 ---
 
@@ -39,7 +39,7 @@ The application manages settings and database sessions through a decoupled, dete
 [backend/app/core/config.py]
   - Resolves root path: Path(__file__).resolve().parent.parent.parent.parent / ".env"
   - Instantiates Pydantic Settings class (`settings`)
-  - Exposes `settings.DATABASE_URL`
+  - Exposes `settings.DATABASE_URL` and `settings.TEST_DATABASE_URL`
           │
           ▼
 [backend/app/db/session.py]
@@ -48,8 +48,12 @@ The application manages settings and database sessions through a decoupled, dete
   - Creates sessionmaker factory: `SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)`
           │
           ▼
+[backend/app/api/deps.py (`get_db`)]
+  - Yields `SessionLocal()` transaction and guarantees closing in `finally` block
+          │
+          ▼
 [Application Services / Handlers]
-  - Uses `SessionLocal()` to generate individual synchronous database transactions.
+  - Receives `Session` via `Depends(get_db)`
 ```
 
 ### Key Implementation Details
@@ -64,11 +68,8 @@ Alembic migrations connect to PostgreSQL through the same unified application co
 
 1. **Path Resolution**: When `alembic` commands are executed (from `backend/`), `backend/migrations/env.py` adds `backend` to `sys.path`.
 2. **Settings Import**: `env.py` imports the instantiated `settings` object directly from `app.core.config`.
-3. **URL Overwrite**: In `run_migrations_online()` and `run_migrations_offline()`, `env.py` executes:
-   ```python
-   config.set_main_option("sqlalchemy.url", str(settings.DATABASE_URL))
-   ```
-4. **Execution**: The database connection engine is created via `engine_from_config` using the resolved application `DATABASE_URL`. Revisions are executed within an active transaction and tracked in the `alembic_version` PostgreSQL table.
+3. **URL Selection**: `env.py` checks `config.attributes.get("database_url")` (set by tests to point to the isolated test database); if absent, it falls back to `settings.DATABASE_URL` so regular CLI runs always target the development database.
+4. **Execution**: The database connection engine is created via `engine_from_config`. Revisions are executed within an active transaction and tracked in the `alembic_version` PostgreSQL table.
 
 ---
 
@@ -82,6 +83,7 @@ The following versions were deployed, executed, and verified:
 - **SQLAlchemy**: `2.0.54` (pinned in `backend/requirements.txt`)
 - **Psycopg**: `3.3.6` (binary driver `psycopg-binary==3.3.6`)
 - **Alembic**: `1.20.0`
+- **HTTPX2**: `2.13.1` (pinned test dependency)
 
 ---
 
@@ -89,10 +91,30 @@ The following versions were deployed, executed, and verified:
 
 ### API Routes
 - `backend/app/main.py`:
-  - `GET /health`: Health check endpoint returning `{"status": "ok"}`.
+  - `GET /health`: Root health check endpoint returning `{"status": "ok"}`.
+  - Mounts `api_router` from `app.api.v1` under `/api/v1`.
+- `backend/app/api/v1/health.py`:
+  - `GET /api/v1/health/db`: Database health check running `SELECT 1` via `get_db`. Returns `{"status": "ok", "database": "up"}` on success, or 503 `SERVICE_UNAVAILABLE` on failure.
+
+### Error Handling Architecture
+- `backend/app/core/errors.py`:
+  - Single registration entrypoint: `register_exception_handlers(app)`.
+  - Enforces unified JSON error format: `{"error": {"code": "...", "message": "...", "details": ...}}`.
+  - Handlers:
+    - `StarletteHTTPException`: Maps status codes to machine-readable string codes; preserves response headers.
+    - `RequestValidationError`: Returns 422 with sanitized list of field errors (dotted path, message, type) without exposing submitted values or context.
+    - `Exception`: Catches all unhandled exceptions; logs traceback server-side and returns generic 500 error.
 
 ### Test Architecture
-- `backend/tests/test_health.py`:
-  - Uses `fastapi.testclient.TestClient` initialized with `app` from `app.main`.
-  - Asserts HTTP status code 200 and exact JSON body `{"status": "ok"}`.
+- `backend/tests/conftest.py`:
+  - `test_engine`: Session-scoped, provisions and runs Alembic migrations on `orgbrain_legal_test`.
+  - `db_session`: Function-scoped, runs tests inside transactions rolled back at teardown.
+  - `client`: TestClient with `get_db` overridden to use `db_session`.
+- Suites:
+  - `test_health.py`: Root health check test.
+  - `test_api_v1_health.py`: Tests `/api/v1/health/db` reachability and simulated failure with leak prevention.
+  - `test_errors.py`: Tests 404, 405, 422 validation error formatting, 500 unhandled errors, and custom HTTPException handling.
+  - `test_db_isolation.py`: Smoke test asserting current database ends with `_test` and contains `vector` extension.
+  - `test_safety_guard.py`: Unit tests for `assert_safe_test_database`.
+  - `test_no_raw_db_in_tests.py`: Static guardrail scanner ensuring test files never access development DATABASE_URL.
 

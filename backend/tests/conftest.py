@@ -139,3 +139,19 @@ def db_session(test_engine):
         finally:
             session.close()
             transaction.rollback()
+
+
+@pytest.fixture
+def client(db_session):
+    """TestClient wired to use the isolated test database session fixture."""
+    from fastapi.testclient import TestClient
+    from app.api.deps import get_db
+    from app.main import app
+
+    def _override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_get_db
+    with TestClient(app, raise_server_exceptions=False) as c:
+        yield c
+    app.dependency_overrides.clear()
