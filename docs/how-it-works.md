@@ -41,6 +41,16 @@ This guide explains how all the pieces of our backend setup fit together. If you
 - **The Analogy**: Your house key or password notebook. You keep it in your pocket and never give it to strangers. `.env.example` is like a fake blank dummy key that shows where the notches go, while `.env` is the actual key that unlocks your local database.
 - **Why we need it**: Secrets and local machine settings must never be committed to Git. `.env` stays on your computer (ignored by `.gitignore`), while code reads from it securely.
 
+### 8. `get_db` (Database Session Dependency)
+- **Plain English**: A helper function that hands an endpoint a database connection when a request arrives and automatically closes it when the request finishes.
+- **The Analogy**: Like a library pass that lets you into the reading room for one visit. When you leave, the pass is turned in and the door locks behind you so connections aren't left dangling open.
+- **Why we need it**: It prevents database connection leaks and makes it trivial to swap in a test database during automated testing.
+
+### 9. Standardized Error Envelope
+- **Plain English**: A single, consistent JSON structure used for every error that ever comes out of the server (`{"error": {"code": "...", "message": "..."}}`).
+- **The Analogy**: A standard return receipt from a store. Regardless of whether you return shoes, groceries, or electronics, the receipt always has the exact same layout: store name, barcode, reason, and timestamp.
+- **Why we need it**: Frontend apps and mobile apps don't have to guess how errors look. They can check `error.code` consistently across all endpoints.
+
 ---
 
 ## 2. Commands You Will Use Every Day
@@ -102,5 +112,5 @@ cd backend
 ..\backend\.venv\Scripts\uvicorn.exe app.main:app --port 8000
 ```
 - **What it does**: Starts the local FastAPI development server on port 8000.
-- **When to use**: When testing API endpoints locally. You can visit `http://127.0.0.1:8000/health` in your browser or client tool.
+- **When to use**: When testing API endpoints locally. You can visit `http://127.0.0.1:8000/health` or `http://127.0.0.1:8000/api/v1/health/db` in your browser or client tool.
 
