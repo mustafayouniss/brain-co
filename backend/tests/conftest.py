@@ -29,6 +29,7 @@ Fixture lifecycle
     accumulates no data between runs.
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,11 @@ from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+
+# Ensure tests have a valid deterministic SECRET_KEY if not configured in environment
+os.environ.setdefault(
+    "SECRET_KEY", "test-secret-key-for-test-suite-at-least-32-chars-long"
+)
 
 from app.core.config import settings
 from app.db.test_utils import assert_safe_test_database
