@@ -112,33 +112,29 @@ class TestCreateUserService:
             create_user(db_session, email="x@example.com", full_name="X",
                         password="GoodPassword123", role="superuser")
 
-    def test_other_integrity_error_propagates(self, db_session):
+    def test_other_integrity_error_propagates(self, db_session, monkeypatch):
         """An IntegrityError from a constraint other than uq_users_email_lower
-        must propagate as IntegrityError, not be swallowed as EmailAlreadyExistsError."""
-        # Insert a user with a known UUID
-        fixed_id = uuid.uuid4()
-        user = User(
-            id=fixed_id,
-            email="unique1@example.com",
-            full_name="U1",
-            hashed_password=hash_password("GoodPassword123"),
-            role="employee",
-        )
-        db_session.add(user)
-        db_session.flush()
-        db_session.commit()
+        must propagate as IntegrityError, and must NOT become EmailAlreadyExistsError."""
+        class FakeDiag:
+            constraint_name = "ck_some_other_constraint"
 
-        # Try to insert another row with the same primary key — violates pk, not email index
-        user2 = User(
-            id=fixed_id,
-            email="unique2@example.com",
-            full_name="U2",
-            hashed_password=hash_password("GoodPassword123"),
-            role="employee",
-        )
-        db_session.add(user2)
-        with pytest.raises(IntegrityError):
-            db_session.flush()
+        class FakeOrig(Exception):
+            diag = FakeDiag()
+
+        def fake_flush():
+            raise IntegrityError("statement", {}, FakeOrig())
+
+        monkeypatch.setattr(db_session, "flush", fake_flush)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            create_user(
+                db_session,
+                email="other_error@example.com",
+                full_name="Other",
+                password="GoodPassword123",
+                role="employee",
+            )
+        assert not isinstance(exc_info.value, EmailAlreadyExistsError)
 
     def test_caller_commits(self, db_session):
         """create_user only flushes; row exists only after caller commits."""
@@ -218,15 +214,11 @@ class TestUsersEndpoint:
         resp = client.post(
             "/api/v1/users",
             json={"email": "x@example.com", "full_name": "X",
-                  "password": "short", "role": "employee"},
+                  "password": "p@ss1", "role": "employee"},
             headers={"Authorization": f"Bearer {_admin_token(admin)}"},
         )
         assert resp.status_code == 422
-        # The submitted value must not appear in the error message field
-        # (it may appear in the type string e.g. "string_too_short", which is acceptable)
-        body = resp.json()
-        for detail in body.get("error", {}).get("details", []):
-            assert "short" not in detail.get("message", "")
+        assert "p@ss1" not in resp.text
 
     def test_long_password_gets_422(self, db_session, client):
         admin = _make_admin(db_session)

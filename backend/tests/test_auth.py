@@ -288,6 +288,15 @@ def test_canary_password_not_in_login_response(db_session, client):
     assert _CANARY_PASSWORD not in resp.text
 
 
+def test_canary_password_not_in_captured_logs(db_session, client, caplog):
+    """Canary password must never appear in captured log output."""
+    _make_user(db_session, email="eve_log@example.com", password="validpassword1234")
+    with caplog.at_level("DEBUG"):
+        _login(client, "eve_log@example.com", _CANARY_PASSWORD)
+        _login(client, "eve_log@example.com", "validpassword1234")
+    assert _CANARY_PASSWORD not in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # Rehash: if password needs rehash, new hash stored after login
 # ---------------------------------------------------------------------------
