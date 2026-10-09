@@ -22,3 +22,7 @@ pgdata/
 build/
 dist/
 *.egg-info/
+
+# Dependencies
+node_modules/
+
