@@ -34,8 +34,13 @@ Documentation must only describe things that actually happened and were verified
 
 ## Safety and logging rules
 - Log every command that changes anything (install, create/move/delete, docker, alembic, git) in docs/journal/<today>.md: time, exact command, result.
+- Never delete any file or folder (even one you created by mistake) without first showing me the exact command and waiting for my OK.
 - Never run these without first showing me the exact command and waiting for my OK: deleting files or folders, `docker compose down -v`, `docker volume rm`, `git push`, `git reset --hard`, `git clean`, any force flag, anything outside D:\Study\projects\OrgBrain, changing global or system settings.
+- Stage files explicitly by path, never `git add -A` or `git add .`; if `git status` shows an unexpected file, STOP.
+- Final task reports must include `git diff --cached --stat` before the commit and `git show --stat HEAD` after it, not only a summary.
 - Finish every task with git status, then a commit with a clear message. Never commit .env or .venv.
+- A new calendar day means creating a new `docs/journal/<YYYY-MM-DD>.md` file; otherwise append to today's file (never recreate or overwrite).
+- Write markdown and journal files from PowerShell only with single-quoted here-strings `@' ... '@` or with Python, never double-quoted `@" ... "@` (a backtick followed by b or t becomes a control character), and always save as UTF-8 without BOM.
 
 ## Token-saving rules
 - Never read whole files that keep growing: docs/journal/* and docs/verification-log.md. Read only the last 40 lines of the latest journal, and APPEND to it.
