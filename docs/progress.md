@@ -28,9 +28,11 @@
 - [x] **T8** — Authorization dependencies: `get_current_user` in `app/api/deps.py` (HTTPBearer auto_error=False, uniform 401), `require_admin` dependency (enforces role == "admin" directly from DB row; 403 on employee), tested with isolated throwaway app and real error handlers.
 - [x] **T9** — User management: `create_user` domain service (validates password length 12-128 and role first, flushes, discriminates `uq_users_email_lower` constraint from other IntegrityErrors, caller commits), `POST /api/v1/users` admin-only endpoint (201 UserResponse, 403 for employee, 409 for duplicate email, 422 on validation failure), `python -m app.scripts.create_admin` CLI (interactive getpass prompting, confirmation check, idempotent on existing email, password masked in stdout/err).
 - [x] **T10** — Frontend contract & docs: `docs/api/auth.md` (verified request/response examples, status codes, WWW-Authenticate header, token lifetime, password policy, what is not built), updated `docs/security.md`, `docs/architecture.md`, and `docs/how-it-works.md`.
+- [x] **Ring 0 Exit Review** — All Ring 0 backend foundation exit criteria evaluated and verified against real terminal evidence.
 
 ## What's Next (Ring 0 — remaining tasks, in order)
 - [ ] **T11** — CI: GitHub Actions workflow (deferred until after the team-repo merge).
+- [ ] **Manual Browser Login Test** — Interactive password prompt / browser verification (PENDING-KARIM).
 
 ## Known Issues
 - None.
