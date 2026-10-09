@@ -25,6 +25,12 @@ Every folder in the repository and its single-line designated purpose:
 - `backend/migrations/`: Alembic database schema migration environment and runners.
 - `backend/migrations/versions/`: Individual revision scripts representing historical database schema transformations.
 - `backend/tests/`: Automated pytest test suites covering unit, integration, and endpoint behaviors with isolated test DB fixtures.
+- `ai/`: Reusable, provider-agnostic AI Engine package in Python 3.12.
+- `ai/core/`: Interfaces (`provider.py`), normalized Pydantic types (`request.py`, `response.py`, `error.py`), and orchestration services (`llm_service.py`).
+- `ai/providers/`: Extensible provider implementations (`OpenAIProvider`, `DeepSeekProvider`, `OpenRouterProvider`, `KimiProvider`, `OllamaProvider`, `FakeLLMProvider`) and central `ProviderRegistry` factory.
+- `ai/prompts/`: Template interpolation, variable extraction, and chat formatting (`prompt_template.py`).
+- `ai/config/`: Centralized configuration loading multi-provider credentials from `.env` (`ai_config.py`).
+- `ai/tests/`: Automated Pytest suite (54 unit tests) covering swappability, contracts, error normalization, and mock generations.
 
 ---
 

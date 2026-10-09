@@ -63,6 +63,12 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
 - Passwords: argon2-cffi==25.1.0 used directly (Argon2id, library defaults). FastAPI's tutorial uses pwdlib with Argon2; we skip that wrapper to keep fewer layers.
 - Tokens: PyJWT, HS256 pinned, payload only sub/iat/exp, access token only.
 - Not built yet: refresh tokens, revocation, password policy (min length decided in T9).
+
+## D-013 — AI Engine Python Rebuild & Scalable Provider Registry (2026-10-09)
+- Unified Python Stack: To eliminate runtime and language conflict with FastAPI backend, `ai/` is rebuilt in Python 3.12 (async-first, Pydantic v2).
+- Multi-Provider Scalability: Reusable `BaseOpenAICompatibleProvider` powers `OpenAIProvider`, `DeepSeekProvider` (deepseek-chat, deepseek-reasoner/R1), `OpenRouterProvider`, `KimiProvider` (moonshot-v1), `OllamaProvider` (local), and `FakeLLMProvider`.
+- Zero Code Changes in Higher Rings: Providers are managed via `ProviderRegistry` and `AIConfig` (`.env`). Higher rings (Rings 1–10) depend strictly on `ILLMProvider` and `LLMService` abstractions. Dynamic swappability via `set_provider()` or `.env`.
+
 ---
 
 ## Open questions (do not assume an answer)

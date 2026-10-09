@@ -61,7 +61,13 @@ This guide explains how all the pieces of our backend setup fit together. If you
 - **The Analogy**: An amusement park wristband stamped with an expiration time. Every ride operator can inspect the stamp to confirm it hasn't expired without having to look up the customer in the main ticket office every time.
 - **Why we need it**: It enables fast, secure, stateless API authentication without repeatedly querying the database on every single request.
 
+### 12. Provider-Agnostic AI Engine & Registry
+- **Plain English**: A unified system that talks to Large Language Models (AI) without caring which company made the AI.
+- **The Analogy**: A universal power adapter. Whether you plug in your phone in Egypt, China, or the US, the adapter fits the local wall outlet and provides clean electricity to your phone. The Brain's business logic is your phone; OpenAI, DeepSeek, Kimi, OpenRouter, and Ollama are different international wall outlets. The `ProviderRegistry` and `LLMService` adapt to each without requiring you to buy a new phone.
+- **Why we need it**: The organization can switch from OpenAI to DeepSeek (or any other provider) with a single environment variable change, without rewriting a single line of legal reasoning or case processing code.
+
 ---
+
 
 ## 2. Commands You Will Use Every Day
 
