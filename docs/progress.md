@@ -30,9 +30,7 @@
 - [x] **T10** — Frontend contract & docs: `docs/api/auth.md` (verified request/response examples, status codes, WWW-Authenticate header, token lifetime, password policy, what is not built), updated `docs/security.md`, `docs/architecture.md`, and `docs/how-it-works.md`.
 
 ## What's Next (Ring 0 — remaining tasks, in order)
-- [ ] **T11** — CI: GitHub Actions workflow running pytest and migration checks.
-- [ ] **T12** — Documentation & code formatting verification (ruff/lint checks).
-- [ ] **T13** — Ring 0 completion review and sign-off.
+- [ ] **T11** — CI: GitHub Actions workflow (deferred until after the team-repo merge).
 
 ## Known Issues
 - None.
