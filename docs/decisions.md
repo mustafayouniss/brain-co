@@ -59,6 +59,10 @@ Current status: Ring 0 (Foundation) is in progress. Ring 0 backend scope per the
 Karim (backend lead) decides the backend stack and architecture and does not need team approval for it (stated by Karim, 2026-10-06). The backend is Python / FastAPI / PostgreSQL (D-001) even though the team repository `brain-co` contains a Node/Prisma scaffold, a docker-compose with Redis, Neo4j and MinIO, and a README that still lists "Organization isolation". Agents must follow `decisions.md`, not the team repo's scaffold or README. ADRs for D-001, D-003 and D-004 are optional records, not approval gates.
 Practical note: other people's code (frontend, mobile, AI) talks to this backend through its API, so the API contracts (`docs/api/`) are what must stay clear and accurate.
 
+## D-012 — Password hashing and tokens (2026-10-09, owner: Karim)
+- Passwords: argon2-cffi==25.1.0 used directly (Argon2id, library defaults). FastAPI's tutorial uses pwdlib with Argon2; we skip that wrapper to keep fewer layers.
+- Tokens: PyJWT, HS256 pinned, payload only sub/iat/exp, access token only.
+- Not built yet: refresh tokens, revocation, password policy (min length decided in T9).
 ---
 
 ## Open questions (do not assume an answer)

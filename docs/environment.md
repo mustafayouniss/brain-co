@@ -124,8 +124,23 @@ POSTGRES_PASSWORD=postgres
 POSTGRES_DB=orgbrain_legal
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
+POSTGRES_TEST_DB=orgbrain_legal_test
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/orgbrain_legal
+SECRET_KEY=<your_generated_secret_key>
+ACCESS_TOKEN_EXPIRE_MINUTES=60
 ```
+
+#### Generate a Secure SECRET_KEY
+The application **strictly refuses to start without a valid `SECRET_KEY`** (raises a `ValidationError` if the variable is missing, shorter than 32 characters, or uses the `"change-this*"` placeholder).
+
+Each developer must generate their own private random key and set it in the root `.env`:
+```powershell
+backend\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+Copy the generated string and set `SECRET_KEY=<output>` in your root `.env`.
+
+> [!WARNING]
+> **Never** paste your `SECRET_KEY` into chats, terminal logs, or journal entries, and **never** commit `.env` to Git.
 
 ### Step 4: Start Postgres Container via Docker Compose
 Start the service in detached mode:
