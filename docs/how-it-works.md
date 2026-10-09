@@ -63,7 +63,39 @@ This guide explains how all the pieces of our backend setup fit together. If you
 
 ---
 
-## 2. Commands You Will Use Every Day
+## 2. How User Accounts & Security Work
+
+Our application is a private organizational system for legal operations. Because of this, **there is no public sign-up form on the website**. Nobody can just visit the site and create an account. Instead, accounts are created through a secure, two-step chain of trust:
+
+### Step 1: How Karim Creates the First Admin
+When the system is first installed, there are no users in the database at all. To bootstrap the system:
+1. Karim opens a terminal inside the backend environment and runs:
+   ```powershell
+   python -m app.scripts.create_admin --email karim@example.com --full-name "Karim Admin"
+   ```
+2. The script prompts Karim for a password twice on the command line:
+   - The password characters do **not echo to the screen** while typing (using `getpass`).
+   - The password is **never written inside `.env`**, never passed as a command argument, and never printed to logs.
+3. The script hashes the password with Argon2id and saves the administrator account directly to PostgreSQL.
+
+### Step 2: How Admins Create Employee Accounts
+Once the initial administrator account exists, all other users are invited by admins:
+1. The administrator logs into the system using `POST /api/v1/auth/login` to receive an access token.
+2. The administrator calls the user creation endpoint:
+   ```http
+   POST /api/v1/users
+   Authorization: Bearer <admin_token>
+   ```
+   with the employee's name, email, role (`"employee"`), and temporary password (at least 12 characters).
+3. The server checks the database to verify the caller really is an administrator. If someone with an employee account tries to call this endpoint, they immediately get a `403 Forbidden` error.
+
+### Step 3: How Users Log In and Protect Privacy
+- When a user logs in (`POST /api/v1/auth/login`), the system verifies their password. If valid, they receive a JWT access token valid for 60 minutes.
+- **User Enumeration Defense**: If a hacker tries guessing emails by sending random usernames, the server returns the exact same generic `401 Unauthorized` message whether the email exists with the wrong password or doesn't exist at all. This prevents attackers from figuring out who works at the organization.
+
+---
+
+## 3. Commands You Will Use Every Day
 
 Here are the essential commands you will run regularly when working on this backend:
 
@@ -123,4 +155,3 @@ cd backend
 ```
 - **What it does**: Starts the local FastAPI development server on port 8000.
 - **When to use**: When testing API endpoints locally. You can visit `http://127.0.0.1:8000/health` or `http://127.0.0.1:8000/api/v1/health/db` in your browser or client tool.
-

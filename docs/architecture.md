@@ -11,6 +11,7 @@ Every folder in the repository and its single-line designated purpose:
 - `OrgBrain/`: Root workspace directory containing repository configurations, documentation, and container manifests.
 - `docs/`: System documentation, operational runbooks, architectural decisions, and task logs.
 - `docs/adr/`: Architecture Decision Records (ADRs) recording historical design choices and context.
+- `docs/api/`: Verified public API contracts and endpoint specifications (`auth.md`, `conventions.md`).
 - `docs/journal/`: Daily chronological session records capturing actions taken, commands run, and issues resolved.
 - `docs/rings/`: Ring architecture boundary specifications detailing security, isolation, and ring requirements.
 - `backend/`: Python application workspace containing source code, migrations, virtual environment, and dependency manifests.
@@ -20,8 +21,9 @@ Every folder in the repository and its single-line designated purpose:
 - `backend/app/core/`: Application settings, environment variable loaders, unified error handling (`errors.py`), and cryptographic/security utilities (`security.py`).
 - `backend/app/db/`: Database connection engine (hide_parameters=True), declarative Base (`base.py`), session factory, and test safety guards (`test_utils.py`).
 - `backend/app/models/`: SQLAlchemy 2.0 ORM declarative models. Currently: `user.py` (User entity with case-insensitive email uniqueness and role check constraint).
-- `backend/app/schemas/`: Pydantic v2 data models for input validation, request parsing, and response serialization.
-- `backend/app/services/`: Reusable domain business logic and data processing operations decoupled from API endpoints.
+- `backend/app/schemas/`: Pydantic v2 data models for input validation, request parsing, and response serialization (`auth.py`).
+- `backend/app/scripts/`: Administrative and operational CLI scripts (`create_admin.py`).
+- `backend/app/services/`: Reusable domain business logic and data processing operations decoupled from API endpoints (`user_service.py`).
 - `backend/migrations/`: Alembic database schema migration environment and runners.
 - `backend/migrations/versions/`: Individual revision scripts representing historical database schema transformations.
 - `backend/tests/`: Automated pytest test suites covering unit, integration, and endpoint behaviors with isolated test DB fixtures.
@@ -52,9 +54,15 @@ The application manages settings and database sessions through a decoupled, dete
 [backend/app/api/deps.py (`get_db`)]
   - Yields `SessionLocal()` transaction and guarantees closing in `finally` block
           │
+          ├─────────────────────────────────────────────┐
+          ▼                                             ▼
+[get_current_user]                            [Application Handlers]
+  - Validates Bearer JWT token                  - Receives `Session` via `Depends(get_db)`
+  - Looks up active User in DB
+          │
           ▼
-[Application Services / Handlers]
-  - Receives `Session` via `Depends(get_db)`
+[require_admin]
+  - Enforces `user.role == "admin"` from DB row
 ```
 
 ### Key Implementation Details
@@ -98,6 +106,17 @@ The following versions were deployed, executed, and verified:
   - Mounts `api_router` from `app.api.v1` under `/api/v1`.
 - `backend/app/api/v1/health.py`:
   - `GET /api/v1/health/db`: Database health check running `SELECT 1` via `get_db`. Returns `{"status": "ok", "database": "up"}` on success, or 503 `SERVICE_UNAVAILABLE` on failure.
+- `backend/app/api/v1/auth.py`:
+  - `POST /api/v1/auth/login`: Authenticates with email and password, returning `{access_token, token_type}`. Uniform 401 for unknown/wrong/inactive.
+  - `GET /api/v1/auth/me`: Returns profile of authenticated user (`id`, `email`, `full_name`, `role`, `is_active`, `created_at`).
+- `backend/app/api/v1/users.py`:
+  - `POST /api/v1/users`: Admin-only user provisioning (`require_admin`). Returns 201 with `UserResponse`, 409 on duplicate email, 422 on invalid role/password length.
+
+### Services and CLI Tools
+- `backend/app/services/user_service.py`:
+  - `create_user`: Validates password length (12-128) and role (`admin`/`employee`), normalizes email, hashes password with Argon2id, flushes to DB, and isolates `EmailAlreadyExistsError` from other `IntegrityError` exceptions. Caller commits.
+- `backend/app/scripts/create_admin.py`:
+  - Interactive CLI to provision the initial administrator. Prompts for password securely twice using `getpass` (never in CLI args, logs, or `.env`).
 
 ### Security Architecture
 - `backend/app/core/security.py`:
@@ -131,11 +150,12 @@ The following versions were deployed, executed, and verified:
   - `test_no_raw_db_in_tests.py`: Static guardrail scanner ensuring test files never access development DATABASE_URL.
   - `test_user_model.py`: Tests for `User` model — UUID generation, `is_active` default, ORM email normalisation, duplicate email (both ORM and raw SQL bypass), invalid role, null hashed_password, and `engine.hide_parameters`.
   - `test_security.py`: Unit tests for password hashing, safe verification, dummy hash timing mitigation, rehash checking, JWT round-trip/expiry/tampering/alg-none rejection, and SECRET_KEY validation.
+  - `test_auth.py`: Tests for `POST /api/v1/auth/login` and `GET /api/v1/auth/me` covering login success, uniform 401 on wrong password / unknown email / inactive account, 422 validation, credential extraction, rehash on login, and canary secret leak protection.
+  - `test_auth_rbac.py`: Tests for `require_admin` dependency using an isolated throwaway app with real error handlers, testing admin 200, employee 403, missing token 401, inactive admin 401, and DB role downgrade.
+  - `test_users.py`: Tests for `create_user` service (validation, hashing, duplicate email, caller-commits, other integrity errors propagating), `POST /api/v1/users` endpoint (admin 201, employee 403, 409 duplicate, 422 validation), and `create_admin` CLI (password prompting, confirmation check, email exists handling, password masking in output).
 
 ### Database Tables (via Alembic)
 | Revision | Table | Description |
 |---|---|---|
 | `6dd2ff08b0bb` | — | Enables `pgvector` extension |
 | `778be99882b6` | `users` | User accounts; UUID PK, case-insensitive unique email, VARCHAR+CHECK role, timezone-aware `created_at` |
-
-
