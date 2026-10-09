@@ -12,6 +12,7 @@ class Settings(BaseSettings):
         env_file=ENV_FILE_PATH,
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     DATABASE_URL: str = (
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_TEST_DB: str = "orgbrain_legal_test"
 
-    SECRET_KEY: str = "change-this-placeholder-secret-key-at-least-32-chars"
+    SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     @field_validator("SECRET_KEY")

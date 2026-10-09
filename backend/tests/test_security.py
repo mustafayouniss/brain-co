@@ -1,6 +1,9 @@
+import base64
 from datetime import datetime, timedelta, timezone
+import json
 
 import jwt
+import jwt.exceptions
 import pytest
 from pydantic import ValidationError
 
@@ -108,10 +111,12 @@ def test_token_round_trip():
 
 
 def test_expired_token_refused():
-    """Token with past expiration is rejected with TokenSecurityError."""
+    """Token with past expiration is rejected with TokenSecurityError caused by ExpiredSignatureError."""
     token = create_access_token(subject="user-uuid-12345", expires_minutes=-5)
-    with pytest.raises(TokenSecurityError, match="Invalid access token"):
+    with pytest.raises(TokenSecurityError, match="Invalid access token") as exc_info:
         decode_access_token(token)
+
+    assert isinstance(exc_info.value.__cause__, jwt.ExpiredSignatureError)
 
 
 def test_token_signed_with_another_key_refused():
@@ -124,8 +129,10 @@ def test_token_signed_with_another_key_refused():
     }
     token = jwt.encode(payload, ANOTHER_FAKE_KEY, algorithm="HS256")
 
-    with pytest.raises(TokenSecurityError, match="Invalid access token"):
+    with pytest.raises(TokenSecurityError, match="Invalid access token") as exc_info:
         decode_access_token(token)
+
+    assert isinstance(exc_info.value.__cause__, jwt.InvalidSignatureError)
 
 
 def test_tampered_token_refused():
@@ -140,9 +147,6 @@ def test_tampered_token_refused():
 
 def test_token_with_alg_none_refused():
     """Tokens using algorithm 'none' are rejected."""
-    import base64
-    import json
-
     now = datetime.now(timezone.utc)
     payload = {
         "sub": "user-uuid-12345",
@@ -161,7 +165,7 @@ def test_token_with_alg_none_refused():
 
 
 def test_token_missing_exp_refused():
-    """Token without required exp claim is rejected with TokenSecurityError."""
+    """Token without required exp claim is rejected with TokenSecurityError caused by MissingRequiredClaimError."""
     now = datetime.now(timezone.utc)
     payload = {
         "sub": "user-uuid-12345",
@@ -169,12 +173,61 @@ def test_token_missing_exp_refused():
     }
     token = jwt.encode(payload, FAKE_SECRET_KEY, algorithm="HS256")
 
-    with pytest.raises(TokenSecurityError, match="Invalid access token"):
+    with pytest.raises(TokenSecurityError, match="Invalid access token") as exc_info:
         decode_access_token(token)
+
+    assert isinstance(exc_info.value.__cause__, jwt.MissingRequiredClaimError)
+
+
+def test_token_missing_sub_refused():
+    """Token without required sub claim is rejected with TokenSecurityError caused by MissingRequiredClaimError."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "iat": now,
+        "exp": now + timedelta(minutes=15),
+    }
+    token = jwt.encode(payload, FAKE_SECRET_KEY, algorithm="HS256")
+
+    with pytest.raises(TokenSecurityError, match="Invalid access token") as exc_info:
+        decode_access_token(token)
+
+    assert isinstance(exc_info.value.__cause__, jwt.MissingRequiredClaimError)
+
+
+def test_token_missing_iat_refused():
+    """Token without required iat claim is rejected with TokenSecurityError caused by MissingRequiredClaimError."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": "user-uuid-12345",
+        "exp": now + timedelta(minutes=15),
+    }
+    token = jwt.encode(payload, FAKE_SECRET_KEY, algorithm="HS256")
+
+    with pytest.raises(TokenSecurityError, match="Invalid access token") as exc_info:
+        decode_access_token(token)
+
+    assert isinstance(exc_info.value.__cause__, jwt.MissingRequiredClaimError)
+
+
+def test_token_non_string_sub_refused():
+    """Token with non-string subject raises TokenSecurityError caused by InvalidSubjectError."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": 12345,
+        "iat": now,
+        "exp": now + timedelta(minutes=15),
+    }
+    token = jwt.encode(payload, FAKE_SECRET_KEY, algorithm="HS256")
+
+    with pytest.raises(TokenSecurityError, match="Invalid access token") as exc_info:
+        decode_access_token(token)
+
+    assert isinstance(exc_info.value.__cause__, jwt.InvalidTokenError)
+    assert isinstance(exc_info.value.__cause__, jwt.exceptions.InvalidSubjectError)
 
 
 def test_token_empty_subject_refused():
-    """Token with empty or non-string subject raises TokenSecurityError."""
+    """Token with empty string subject raises TokenSecurityError."""
     now = datetime.now(timezone.utc)
     payload = {
         "sub": "",
@@ -204,20 +257,37 @@ def test_token_payload_contains_strictly_sub_iat_exp():
 
 
 def test_short_secret_key_refused():
-    """Settings validator rejects secret keys shorter than 32 characters."""
+    """Settings validator rejects secret keys shorter than 32 characters without leaking input."""
+    canary_short_key = "short-secret-canary-XYZ-987"
     with pytest.raises(ValidationError) as exc_info:
         Settings(
             _env_file=None,  # type: ignore[call-arg]
-            SECRET_KEY="short-key",
+            SECRET_KEY=canary_short_key,
         )
-    assert "SECRET_KEY must be at least 32 characters long" in str(exc_info.value)
+    error_text = str(exc_info.value)
+    assert "SECRET_KEY must be at least 32 characters long" in error_text
+    assert canary_short_key not in error_text
 
 
 def test_placeholder_secret_key_refused():
-    """Settings validator rejects secret keys starting with 'change-this'."""
+    """Settings validator rejects secret keys starting with 'change-this' without leaking input."""
+    canary_placeholder = "change-this-placeholder-secret-canary-ABC-456"
     with pytest.raises(ValidationError) as exc_info:
         Settings(
             _env_file=None,  # type: ignore[call-arg]
-            SECRET_KEY="change-this-placeholder-value-that-is-long-enough-32-chars",
+            SECRET_KEY=canary_placeholder,
         )
-    assert "SECRET_KEY must not use placeholder value" in str(exc_info.value)
+    error_text = str(exc_info.value)
+    assert "SECRET_KEY must not use placeholder value" in error_text
+    assert canary_placeholder not in error_text
+
+
+def test_missing_secret_key_refused(monkeypatch):
+    """Settings refuses initialization when SECRET_KEY is missing from environment."""
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            _env_file=None,  # type: ignore[call-arg]
+        )
+    error_text = str(exc_info.value)
+    assert "Field required" in error_text or "missing" in error_text.lower()
