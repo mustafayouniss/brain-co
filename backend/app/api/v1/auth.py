@@ -6,28 +6,21 @@ Security design
 - POST /auth/login returns uniform 401 (same status, body, header) for:
     unknown email, wrong password, inactive user.
   This prevents user-enumeration attacks (D-014).
-- get_current_user returns uniform 401 for:
-    missing token, garbage token, expired token, inactive user,
-    unknown user, bad UUID in sub.
-  TokenSecurityError text and PyJWT internals never reach the response.
-- WWW-Authenticate: Bearer is sent on every 401 from this module.
+- /auth/me delegates token validation to get_current_user (in deps.py).
+- WWW-Authenticate: Bearer is sent on every 401 in this module.
 """
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_current_user, get_db
 from app.core.security import (
     TokenSecurityError,
     create_access_token,
-    decode_access_token,
+    hash_password,
     password_needs_rehash,
     verify_dummy_password,
     verify_password,
-    hash_password,
 )
 from app.models.user import User
 from app.schemas.auth import LoginRequest, TokenResponse, UserResponse
@@ -42,55 +35,15 @@ _LOGIN_401 = HTTPException(
     headers=_BEARER_HEADERS,
 )
 
-_AUTH_401 = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Could not validate credentials",
-    headers=_BEARER_HEADERS,
-)
-
-# HTTPBearer with auto_error=False so a missing header goes through our own
-# uniform 401 instead of FastAPI's default plain-text 403.
-_bearer_scheme = HTTPBearer(auto_error=False)
-
-
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
-    db: Session = Depends(get_db),
-) -> User:
-    """Validate Bearer token and return the active User.
-
-    Raises the same generic 401 for every failure mode so that callers
-    cannot distinguish missing token from bad token from unknown user.
-    """
-    if credentials is None:
-        raise _AUTH_401
-
-    try:
-        payload = decode_access_token(credentials.credentials)
-    except TokenSecurityError:
-        raise _AUTH_401
-
-    sub = payload.get("sub", "")
-    try:
-        user_id = uuid.UUID(sub)
-    except (ValueError, AttributeError):
-        raise _AUTH_401
-
-    user: User | None = db.get(User, user_id)
-    if user is None or not user.is_active:
-        raise _AUTH_401
-
-    return user
-
 
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     """Authenticate a user and return a Bearer access token.
 
     Returns the same 401 for unknown email, wrong password, and inactive
-    user — prevents user enumeration.
+    user — prevents user enumeration (D-014).
     """
-    # Always look up by lower-cased email (body.email is already normalised)
+    # body.email is already stripped and lowercased by LoginRequest validator
     user: User | None = db.query(User).filter(
         func.lower(User.email) == body.email
     ).first()
@@ -106,7 +59,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     if not user.is_active:
         raise _LOGIN_401
 
-    # Opportunistic rehash: upgrade parameters silently on login
+    # Opportunistic rehash: upgrade hash parameters silently on login
     if password_needs_rehash(user.hashed_password):
         user.hashed_password = hash_password(body.password)
         db.add(user)
