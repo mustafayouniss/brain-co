@@ -1,3 +1,4 @@
+
 from typing import Any, Callable, Optional, Type
 
 from ai.core.interfaces.provider import ILLMProvider
@@ -8,6 +9,8 @@ from ai.providers.kimi_provider import KimiProvider
 from ai.providers.ollama_provider import OllamaProvider
 from ai.providers.openai_provider import OpenAIProvider
 from ai.providers.openrouter_provider import OpenRouterProvider
+from ai.providers.groq_provider import GroqProvider
+from ai.providers.huggingface_provider import HuggingFaceProvider
 
 
 class ProviderRegistry:
@@ -25,6 +28,9 @@ class ProviderRegistry:
         "kimi": KimiProvider,
         "moonshot": KimiProvider,
         "ollama": OllamaProvider,
+        "groq": GroqProvider,
+        "huggingface": HuggingFaceProvider,
+        "hf": HuggingFaceProvider,
         "fake": FakeLLMProvider,
     }
 
