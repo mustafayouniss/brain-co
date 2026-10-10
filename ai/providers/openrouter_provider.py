@@ -11,7 +11,7 @@ class OpenRouterProvider(BaseOpenAICompatibleProvider):
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        default_model: str = "deepseek/deepseek-r1",
+        default_model: str = "nvidia/nemotron-3-ultra-550b-a55b:free",
         site_url: Optional[str] = None,
         site_name: Optional[str] = "Organizational Brain",
         client: Optional[httpx.AsyncClient] = None,
