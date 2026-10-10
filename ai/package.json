@@ -1,0 +1,27 @@
+{
+  "name": "brain-co-ai-engine",
+  "version": "1.0.0",
+  "description": "Organizational Brain Reasoning, Fact vs Inference & Autonomy Engine",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.1.45",
+    "@langchain/openai": "^0.0.19",
+    "dotenv": "^16.4.5",
+    "langchain": "^0.1.28",
+    "langsmith": "^0.1.18",
+    "openai": "^4.28.4",
+    "tiktoken": "^1.0.14",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.24",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.3.3"
+  }
+}
