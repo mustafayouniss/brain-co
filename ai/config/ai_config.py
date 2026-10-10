@@ -1,13 +1,17 @@
+
 import os
 from pathlib import Path
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
 from ai.core.interfaces.provider import ILLMProvider
 from ai.core.services.llm_service import LLMService
 
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
+
 
 try:
     from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,39 +22,130 @@ try:
             env_file_encoding="utf-8",
             extra="ignore",
         )
+
 except ImportError:
-    class _BaseAIConfig(BaseModel):  # type: ignore
+
+    class _BaseAIConfig(BaseModel):
         pass
 
 
 class AIConfig(_BaseAIConfig):
-    """Centralized AI configuration loading from environment variables or .env file."""
+    """Centralized AI configuration."""
 
-    AI_PROVIDER: str = Field(default_factory=lambda: os.getenv("AI_PROVIDER", "openai"))
-    AI_MODEL: str = Field(default_factory=lambda: os.getenv("AI_MODEL", "gpt-4o"))
-    AI_TEMPERATURE: float = Field(default_factory=lambda: float(os.getenv("AI_TEMPERATURE", "0.7")))
-    AI_MAX_TOKENS: Optional[int] = Field(default_factory=lambda: int(os.getenv("AI_MAX_TOKENS")) if os.getenv("AI_MAX_TOKENS") else None)
+    # General settings
+    AI_PROVIDER: str = Field(
+        default_factory=lambda: os.getenv("AI_PROVIDER", "openai")
+    )
 
-    # Provider credentials & endpoints
-    OPENAI_API_KEY: Optional[str] = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
-    OPENAI_BASE_URL: Optional[str] = Field(default_factory=lambda: os.getenv("OPENAI_BASE_URL"))
+    AI_MODEL: str = Field(
+        default_factory=lambda: os.getenv("AI_MODEL", "gpt-4o")
+    )
 
-    DEEPSEEK_API_KEY: Optional[str] = Field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY"))
-    DEEPSEEK_BASE_URL: Optional[str] = Field(default_factory=lambda: os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
+    AI_TEMPERATURE: float = Field(
+        default_factory=lambda: float(
+            os.getenv("AI_TEMPERATURE", "0.7")
+        )
+    )
 
-    OPENROUTER_API_KEY: Optional[str] = Field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY"))
-    OPENROUTER_BASE_URL: Optional[str] = Field(default_factory=lambda: os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"))
+    AI_MAX_TOKENS: Optional[int] = Field(
+        default_factory=lambda: (
+            int(os.getenv("AI_MAX_TOKENS"))
+            if os.getenv("AI_MAX_TOKENS")
+            else None
+        )
+    )
 
-    KIMI_API_KEY: Optional[str] = Field(default_factory=lambda: os.getenv("KIMI_API_KEY"))
-    KIMI_BASE_URL: Optional[str] = Field(default_factory=lambda: os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1"))
+    # OpenAI
+    OPENAI_API_KEY: Optional[str] = Field(
+        default_factory=lambda: os.getenv("OPENAI_API_KEY")
+    )
 
-    OLLAMA_BASE_URL: Optional[str] = Field(default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"))
+    OPENAI_BASE_URL: Optional[str] = Field(
+        default_factory=lambda: os.getenv("OPENAI_BASE_URL")
+    )
 
-    def create_provider(self, provider_id: Optional[str] = None) -> ILLMProvider:
-        """Create and configure the appropriate ILLMProvider instance based on active settings."""
+    # DeepSeek
+    DEEPSEEK_API_KEY: Optional[str] = Field(
+        default_factory=lambda: os.getenv("DEEPSEEK_API_KEY")
+    )
+
+    DEEPSEEK_BASE_URL: Optional[str] = Field(
+        default_factory=lambda: os.getenv(
+            "DEEPSEEK_BASE_URL",
+            "https://api.deepseek.com",
+        )
+    )
+
+    # OpenRouter
+    OPENROUTER_API_KEY: Optional[str] = Field(
+        default_factory=lambda: os.getenv("OPENROUTER_API_KEY")
+    )
+
+    OPENROUTER_BASE_URL: Optional[str] = Field(
+        default_factory=lambda: os.getenv(
+            "OPENROUTER_BASE_URL",
+            "https://openrouter.ai/api/v1",
+        )
+    )
+
+    # Kimi / Moonshot
+    KIMI_API_KEY: Optional[str] = Field(
+        default_factory=lambda: os.getenv("KIMI_API_KEY")
+    )
+
+    KIMI_BASE_URL: Optional[str] = Field(
+        default_factory=lambda: os.getenv(
+            "KIMI_BASE_URL",
+            "https://api.moonshot.cn/v1",
+        )
+    )
+
+    # Ollama
+    OLLAMA_BASE_URL: Optional[str] = Field(
+        default_factory=lambda: os.getenv(
+            "OLLAMA_BASE_URL",
+            "http://localhost:11434/v1",
+        )
+    )
+
+    # Groq
+    GROQ_API_KEY: Optional[str] = Field(
+        default_factory=lambda: os.getenv("GROQ_API_KEY")
+    )
+
+    GROQ_BASE_URL: Optional[str] = Field(
+        default_factory=lambda: os.getenv(
+            "GROQ_BASE_URL",
+            "https://api.groq.com/openai/v1",
+        )
+    )
+
+    # Hugging Face
+    HUGGINGFACE_API_KEY: Optional[str] = Field(
+        default_factory=lambda: (
+            os.getenv("HUGGINGFACE_API_KEY")
+            or os.getenv("HF_TOKEN")
+        )
+    )
+
+    HUGGINGFACE_BASE_URL: Optional[str] = Field(
+        default_factory=lambda: os.getenv(
+            "HUGGINGFACE_BASE_URL",
+            "https://router.huggingface.co/v1",
+        )
+    )
+
+    def create_provider(
+        self,
+        provider_id: Optional[str] = None,
+    ) -> ILLMProvider:
+        """Create the requested LLM provider."""
+
         from ai.providers.registry import ProviderRegistry
 
-        target_provider = (provider_id or self.AI_PROVIDER).strip().lower()
+        target_provider = (
+            provider_id or self.AI_PROVIDER
+        ).strip().lower()
 
         if target_provider == "openai":
             return ProviderRegistry.create(
@@ -59,41 +154,106 @@ class AIConfig(_BaseAIConfig):
                 base_url=self.OPENAI_BASE_URL,
                 default_model=self.AI_MODEL,
             )
+
         elif target_provider == "deepseek":
             return ProviderRegistry.create(
                 "deepseek",
                 api_key=self.DEEPSEEK_API_KEY,
                 base_url=self.DEEPSEEK_BASE_URL,
-                default_model=self.AI_MODEL if self.AI_MODEL != "gpt-4o" else "deepseek-chat",
+                default_model=(
+                    self.AI_MODEL
+                    if self.AI_MODEL != "gpt-4o"
+                    else "deepseek-chat"
+                ),
             )
+
         elif target_provider == "openrouter":
             return ProviderRegistry.create(
                 "openrouter",
                 api_key=self.OPENROUTER_API_KEY,
                 base_url=self.OPENROUTER_BASE_URL,
-                default_model=self.AI_MODEL if self.AI_MODEL != "gpt-4o" else "deepseek/deepseek-r1",
+                default_model=(
+                    self.AI_MODEL
+                    if self.AI_MODEL != "gpt-4o"
+                    else "deepseek/deepseek-r1"
+                ),
             )
+
         elif target_provider in ("kimi", "moonshot"):
             return ProviderRegistry.create(
                 "kimi",
                 api_key=self.KIMI_API_KEY,
                 base_url=self.KIMI_BASE_URL,
-                default_model=self.AI_MODEL if self.AI_MODEL != "gpt-4o" else "moonshot-v1-8k",
+                default_model=(
+                    self.AI_MODEL
+                    if self.AI_MODEL != "gpt-4o"
+                    else "moonshot-v1-8k"
+                ),
             )
+
         elif target_provider == "ollama":
             return ProviderRegistry.create(
                 "ollama",
                 base_url=self.OLLAMA_BASE_URL,
-                default_model=self.AI_MODEL if self.AI_MODEL != "gpt-4o" else "llama3",
+                default_model=(
+                    self.AI_MODEL
+                    if self.AI_MODEL != "gpt-4o"
+                    else "llama3"
+                ),
             )
+
+        elif target_provider == "groq":
+            if not self.GROQ_API_KEY:
+                raise ValueError(
+                    "GROQ_API_KEY is missing. "
+                    "Set it in your .env file."
+                )
+
+            return ProviderRegistry.create(
+                "groq",
+                api_key=self.GROQ_API_KEY,
+                base_url=self.GROQ_BASE_URL,
+                default_model=(
+                    self.AI_MODEL
+                    if self.AI_MODEL != "gpt-4o"
+                    else "llama-3.3-70b-versatile"
+                ),
+            )
+
+        elif target_provider in ("huggingface", "hf"):
+            if not self.HUGGINGFACE_API_KEY:
+                raise ValueError(
+                    "HUGGINGFACE_API_KEY or HF_TOKEN is missing. "
+                    "Set it in your .env file."
+                )
+
+            return ProviderRegistry.create(
+                "huggingface",
+                api_key=self.HUGGINGFACE_API_KEY,
+                base_url=self.HUGGINGFACE_BASE_URL,
+                default_model=(
+                    self.AI_MODEL
+                    if self.AI_MODEL != "gpt-4o"
+                    else "deepseek-ai/DeepSeek-V4.1-Flash"
+                ),
+            )
+
         elif target_provider == "fake":
             return ProviderRegistry.create("fake")
+
         else:
             return ProviderRegistry.create(target_provider)
 
-    def create_service(self, provider_id: Optional[str] = None) -> LLMService:
-        """Instantiate an LLMService ready to serve requests."""
-        provider = self.create_provider(provider_id=provider_id)
+    def create_service(
+        self,
+        provider_id: Optional[str] = None,
+    ) -> LLMService:
+        """Create an LLM service using the selected provider."""
+
+        provider = self.create_provider(
+            provider_id=provider_id
+        )
+
         return LLMService(provider=provider)
 
 
