@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+import sys
+>>>>>>> origin/main
 from pathlib import Path
 
 from pydantic import field_validator
@@ -6,6 +10,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
+<<<<<<< HEAD
+=======
+# Ensure repository root is in sys.path so 'ai' package is discoverable regardless of execution cwd
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+>>>>>>> origin/main
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

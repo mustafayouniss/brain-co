@@ -76,6 +76,45 @@ def register_exception_handlers(app: FastAPI) -> None:
             },
         )
 
+<<<<<<< HEAD
+=======
+    try:
+        from ai.core.types.error import LLMError, LLMErrorType
+
+        llm_status_map = {
+            LLMErrorType.AUTHENTICATION_FAILED: status.HTTP_502_BAD_GATEWAY,
+            LLMErrorType.RATE_LIMITED: status.HTTP_429_TOO_MANY_REQUESTS,
+            LLMErrorType.MODEL_UNAVAILABLE: status.HTTP_503_SERVICE_UNAVAILABLE,
+            LLMErrorType.INVALID_REQUEST: status.HTTP_400_BAD_REQUEST,
+            LLMErrorType.TIMEOUT: status.HTTP_504_GATEWAY_TIMEOUT,
+            LLMErrorType.PROVIDER_ERROR: status.HTTP_502_BAD_GATEWAY,
+            LLMErrorType.UNKNOWN: status.HTTP_500_INTERNAL_SERVER_ERROR,
+        }
+
+        @app.exception_handler(LLMError)
+        async def llm_exception_handler(
+            request: Request, exc: LLMError
+        ) -> JSONResponse:
+            logger.error("LLM Provider Exception [%s]: %s", exc.provider_id, exc.message)
+            status_code = llm_status_map.get(
+                exc.error_type, status.HTTP_502_BAD_GATEWAY
+            )
+            details = {"provider": exc.provider_id} if exc.provider_id else None
+            error_data = {
+                "code": f"AI_{exc.error_type.value}",
+                "message": exc.message,
+            }
+            if details is not None:
+                error_data["details"] = details
+
+            return JSONResponse(
+                status_code=status_code,
+                content={"error": error_data},
+            )
+    except ImportError:
+        pass
+
+>>>>>>> origin/main
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(
         request: Request, exc: Exception
