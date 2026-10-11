@@ -1,0 +1,918 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Brand tokens
+   Source app: dark-only navy/black with #8052ff purple, gold/mint/violet
+   domain accents. Dark is the default theme; `.light` provides a carefully
+   derived light palette that keeps the same identity and WCAG AA contrast.
+--------------------------------------------------------------------------- */
+:root,
+.dark {
+  color-scheme: dark;
+  --bg: #050b1a;
+  --bg-deep: #000000;
+  --surface: #0a1222;
+  --surface-2: #0e1a30;
+  --elevated: #08080b;
+  --border: #202a3e;
+  --border-strong: #34405a;
+  --fg: #ffffff;
+  --fg-muted: #a7b0c1;
+  /* slightly brighter than before: certified by the strict AA probe — subtle
+     text must stay ≥4.5:1 even where the (translucent) art shows behind it */
+  --fg-subtle: #9ba5b9;
+  --brand: #8052ff;
+  --brand-hover: #946eff;
+  --brand-fg: #ffffff;
+  --brand-soft: rgba(128, 82, 255, 0.14);
+  --gold: #f3ca78;
+  --mint: #9ff0e4;
+  --violet: #c9c2ff;
+  --danger: #ff9b9b;
+  --success: #8adabc;
+  --ring: #9a76ff;
+  --shadow-glow: 0 10px 32px rgba(128, 82, 255, 0.22);
+
+  /* Site-background cell + legal art (dark): near-white lavender soma core,
+     brand-purple → lighter-violet dendrites, pale lavender synapses. */
+  --bg-cell-soma: #efeaff;
+  --bg-cell-dendrite: #9a76ff;
+  --bg-cell-dendrite-hi: #b9a3ff;
+  --bg-cell-glow: #cfc4ff;
+  --bg-cell-synapse: #d8d0ff;
+  --bg-cell-core: #0b0726;
+  --bg-legal-stroke: #9a76ff;
+  --bg-legal-gold: #f3ca78;
+}
+
+.light {
+  color-scheme: light;
+  --bg: #f6f7fb;
+  --bg-deep: #eef0f7;
+  --surface: #ffffff;
+  --surface-2: #f0f2f8;
+  --elevated: #ffffff;
+  --border: #dde2ec;
+  --border-strong: #b9c2d4;
+  --fg: #0a1020;
+  /* slightly darker than before: the light-theme art behind translucent bands
+     is measured strict by the AA probe — these keep ≥4.5:1 under glyphs */
+  --fg-muted: #454d60;
+  --fg-subtle: #4a5266;
+  --brand: #7a55f0;
+  --brand-hover: #6a41e8;
+  --brand-fg: #ffffff;
+  --brand-soft: rgba(122, 85, 240, 0.1);
+  --gold: #8f6b12;
+  --mint: #0b7d6e;
+  --violet: #5b4bd6;
+  --danger: #c62828;
+  --success: #0f766e;
+  --ring: #7a55f0;
+  --shadow-glow: 0 10px 32px rgba(122, 85, 240, 0.18);
+
+  /* Site-background cell + legal art (light): deeper brand-purple soma and
+     dendrites at higher alpha with source-over blending (no additive glow). */
+  --bg-cell-soma: #4a26d2;
+  --bg-cell-dendrite: #5a31d9;
+  --bg-cell-dendrite-hi: #7b54ee;
+  --bg-cell-glow: #7b54ee;
+  --bg-cell-synapse: #6233e0;
+  --bg-cell-core: #ece6ff;
+  --bg-legal-stroke: #5a31d9;
+  --bg-legal-gold: #8f6b12;
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-deep: var(--bg-deep);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-elevated: var(--elevated);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-foreground: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-subtle: var(--fg-subtle);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-soft: var(--brand-soft);
+  --color-gold: var(--gold);
+  --color-mint: var(--mint);
+  --color-violet: var(--violet);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+--------------------------------------------------------------------------- */
+* {
+  box-sizing: border-box;
+  border-color: var(--border);
+}
+
+html {
+  min-width: 320px;
+  scroll-behavior: smooth;
+}
+
+html[data-scroll-behavior="smooth"] {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--brand);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+@layer components {
+  .skip-link {
+    position: fixed;
+    z-index: 200;
+    top: 10px;
+    left: 10px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: var(--brand);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transform: translateY(-160%);
+    transition: transform 160ms ease;
+  }
+
+  .skip-link:focus-visible {
+    transform: translateY(0);
+  }
+
+  .container-page {
+    @apply mx-auto w-full max-w-6xl px-5 sm:px-8;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--fg-subtle);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.17em;
+    line-height: 1.4;
+    text-transform: uppercase;
+  }
+
+  .eyebrow::before {
+    width: 18px;
+    height: 1px;
+    background: var(--brand);
+    content: "";
+  }
+
+  .section-title {
+    font-size: clamp(28px, 4vw, 44px);
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    line-height: 1.06;
+  }
+
+  /* Faint engineering grid used on hero surfaces (from source home screen). */
+  .grid-overlay {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--fg) 5%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--fg) 5%, transparent) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: linear-gradient(to bottom, transparent, black 24%, black 72%, transparent);
+    pointer-events: none;
+  }
+
+  .purple-glow {
+    background: radial-gradient(
+      circle at 50% 50%,
+      color-mix(in srgb, var(--brand) 22%, transparent),
+      transparent 65%
+    );
+  }
+
+  /* --- Brand mark: rounded square with a 5-dot constellation ------------- */
+  .brand-mark {
+    position: relative;
+    display: block;
+    width: 27px;
+    height: 27px;
+    flex: none;
+    border: 1px solid color-mix(in srgb, var(--brand) 62%, transparent);
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--brand) 10%, transparent);
+  }
+
+  .brand-mark i {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #a987ff;
+    box-shadow: 0 0 7px color-mix(in srgb, var(--brand) 90%, transparent);
+  }
+
+  .brand-mark i:nth-child(1) { top: 6px; left: 7px; }
+  .brand-mark i:nth-child(2) { top: 5px; right: 6px; }
+  .brand-mark i:nth-child(3) { top: 12px; left: 11px; }
+  .brand-mark i:nth-child(4) { right: 6px; bottom: 5px; }
+  .brand-mark i:nth-child(5) { bottom: 5px; left: 6px; }
+
+  /* --- Particle morph / static domain shapes ---------------------------- */
+  .particle-morph,
+  .static-shape {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .particle-morph svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* --- Brain network visual (home hero) --------------------------------- */
+  .brain-visual {
+    position: relative;
+    width: min(100%, 340px);
+    aspect-ratio: 1;
+    margin-inline: auto;
+  }
+
+  .brain-visual::before {
+    position: absolute;
+    inset: 12%;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--brand) 17%, transparent),
+      color-mix(in srgb, var(--brand) 2%, transparent) 58%,
+      transparent 72%
+    );
+    filter: blur(10px);
+    content: "";
+  }
+
+  .brain-orbit {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    border: 1px solid color-mix(in srgb, var(--brand) 20%, transparent);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .brain-orbit::before,
+  .brain-orbit::after {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #b69dff;
+    box-shadow: 0 0 9px color-mix(in srgb, var(--brand) 90%, transparent);
+    content: "";
+  }
+
+  .brain-orbit-outer {
+    width: 92%;
+    height: 92%;
+    animation: orbit-spin 24s linear infinite;
+  }
+
+  .brain-orbit-outer::before { top: 10%; left: 16%; }
+  .brain-orbit-outer::after { right: 2%; bottom: 37%; }
+
+  .brain-orbit-inner {
+    width: 76%;
+    height: 76%;
+    border-color: color-mix(in srgb, var(--fg) 8%, transparent);
+    animation: orbit-spin 18s linear reverse infinite;
+  }
+
+  .brain-orbit-inner::before { top: 46%; left: -1px; }
+  .brain-orbit-inner::after { top: 8%; right: 16%; }
+
+  .brain-network {
+    position: absolute;
+    inset: 8%;
+    width: 84%;
+    height: 84%;
+    overflow: visible;
+  }
+
+  .network-lines line {
+    stroke: color-mix(in srgb, #9774ff 43%, transparent);
+    stroke-width: 0.7;
+  }
+
+  .network-nodes circle {
+    fill: #b69dff;
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--brand) 85%, transparent));
+  }
+
+  .brain-core {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: grid;
+    width: 21%;
+    height: 21%;
+    min-width: 52px;
+    min-height: 52px;
+    place-items: center;
+    border: 1px solid rgba(169, 135, 255, 0.55);
+    border-radius: 30%;
+    background: #0b0814;
+    box-shadow: 0 0 30px color-mix(in srgb, var(--brand) 30%, transparent);
+    transform: translate(-50%, -50%);
+  }
+
+  .light .brain-core {
+    background: #150f2b;
+  }
+
+  .brain-core .brand-mark {
+    border: 0;
+    background: transparent;
+    transform: scale(1.12);
+  }
+
+  .brain-label {
+    position: absolute;
+    bottom: 2%;
+    left: 50%;
+    padding: 6px 12px;
+    border: 1px solid color-mix(in srgb, var(--brand) 35%, transparent);
+    border-radius: 999px;
+    color: #d8ceff;
+    background: color-mix(in srgb, var(--bg-deep) 88%, transparent);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  /* --- Status tags ------------------------------------------------------- */
+  .tag {
+    display: inline-flex;
+    min-height: 24px;
+    padding: 0 10px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .tag-available { color: var(--gold); }
+  .tag-planned { color: var(--fg-muted); }
+
+  /* --- Progress dots ----------------------------------------------------- */
+  .progress-dots {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .progress-dots i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--border-strong);
+    transition: width 240ms ease, background 240ms ease;
+  }
+
+  .progress-dots i.active {
+    width: 16px;
+    border-radius: 4px;
+    background: var(--fg);
+  }
+
+  /* --- Three-layer stack visual ------------------------------------------ */
+  .layer-stack {
+    display: flex;
+    width: min(310px, 100%);
+    margin-inline: auto;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .layer-stack div {
+    display: grid;
+    width: 72%;
+    height: 72px;
+    place-items: center;
+    border: 1px solid var(--border-strong);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
+    transition: width 300ms ease;
+  }
+
+  .layer-stack div:nth-child(2) { width: 85%; }
+  .layer-stack div:nth-child(3) { width: 97%; }
+
+  .layer-stack span {
+    padding: 5px 9px;
+    border-radius: 6px;
+    color: var(--fg);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  /* --- Document status chips --------------------------------------------- */
+  .status-chip {
+    padding: 4px 7px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    color: var(--fg-muted);
+    font-size: 9px;
+    font-style: normal;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .status-chip.processed {
+    border-color: color-mix(in srgb, var(--success) 55%, transparent);
+    color: var(--success);
+  }
+
+  .status-chip.failed {
+    border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+    color: var(--danger);
+  }
+
+  .status-chip.uploading,
+  .status-chip.processing,
+  .status-chip.queued {
+    border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+    color: var(--gold);
+  }
+
+  /* --- Skeleton shimmer --------------------------------------------------- */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--fg) 7%, transparent);
+  }
+
+  .skeleton::after {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--fg) 8%, transparent),
+      transparent
+    );
+    content: "";
+    transform: translateX(-100%);
+    animation: shimmer 1.6s infinite;
+  }
+
+  /* --- Legal / long-form copy -------------------------------------------- */
+  .prose-legal {
+    color: var(--fg-muted);
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .prose-legal h2 {
+    margin: 40px 0 14px;
+    color: var(--fg);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .prose-legal h3 {
+    margin: 26px 0 10px;
+    color: var(--fg);
+    font-size: 17px;
+    font-weight: 600;
+  }
+
+  .prose-legal p {
+    margin: 0 0 16px;
+  }
+
+  .prose-legal ul {
+    margin: 0 0 16px;
+    padding-left: 20px;
+    list-style: disc;
+  }
+
+  .prose-legal li {
+    margin-bottom: 8px;
+  }
+
+  .prose-legal a {
+    color: var(--brand);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Animations (ported from the source app)
+--------------------------------------------------------------------------- */
+@keyframes orbit-spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes text-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes document-in {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(1);
+  }
+  45% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(110px, -110px) scale(0.45);
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-text-in {
+  animation: text-in 360ms ease both;
+}
+
+.animate-fade-up {
+  animation: fade-in-up 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.flying-documents i {
+  position: absolute;
+  width: 28px;
+  height: 36px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  opacity: 0;
+  animation: document-in 1400ms ease-out infinite;
+}
+
+.flying-documents i:nth-child(1) { top: 72%; left: 8%; }
+.flying-documents i:nth-child(2) { top: 80%; right: 12%; animation-delay: 280ms; }
+.flying-documents i:nth-child(3) { top: 63%; right: 4%; animation-delay: 560ms; }
+
+/* ---------------------------------------------------------------------------
+   Reduced motion: hard kill-switch (parity with source app)
+--------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Hero morphing particle visual (ADDITIVE — nothing above is edited)
+--------------------------------------------------------------------------- */
+
+/* Oversized dark canvas panel centered on the hero visual. Fixed size → no
+   layout shift; a soft radial edge fade blends it into the hero. The mask
+   lives on the wrapper so base + canvas + fallbacks fade as one unit, and the
+   rings/network that follow in DOM order paint on top of the panel. */
+.brain-field {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(88vw, 560px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 58%, transparent 92%);
+  mask-image: radial-gradient(ellipse at center, #000 58%, transparent 92%);
+}
+
+/* Decorative rings/network sit over the panel; let clicks reach the canvas. */
+.brain-field ~ .brain-orbit,
+.brain-field ~ .brain-network {
+  pointer-events: none;
+}
+
+@media (max-width: 1023px) {
+  .brain-field {
+    width: min(80vw, 480px);
+  }
+}
+
+@media (max-width: 639px) {
+  .brain-field {
+    width: min(90vw, 420px);
+  }
+}
+
+.brain-hero-slot {
+  position: absolute;
+  inset: 0;
+  /* Panel-free hero: transparent base — the particles sit directly on the
+     page background (the radial edge fade lives on .hero-brain-box). */
+  background: transparent;
+}
+
+.brain-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* crossfade from the server-rendered brain placeholder (~600ms) */
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.brain-canvas.is-on {
+  opacity: 1;
+}
+
+/* Static-SVG fallbacks (reduced motion / no canvas 2D / low-end devices). */
+.brain-fallback-stack {
+  position: absolute;
+  inset: 0;
+}
+
+.brain-fallback-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.brain-fallback-svg.is-on {
+  opacity: 1;
+}
+
+/* Live label pill: token-coloured dot + 450 ms fade/swap synced to the morph. */
+.brain-label--live {
+  display: inline-flex;
+  align-items: center;
+  z-index: 2;
+  gap: 8px;
+  transition: opacity 0.225s ease;
+}
+
+.brain-label--live::before {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--label-dot, var(--brand));
+  box-shadow: 0 0 10px var(--label-dot, var(--brand));
+  content: "";
+}
+
+.brain-label--fading {
+  opacity: 0;
+}
+
+.brain-label-chip {
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--brand) 45%, transparent);
+  border-radius: 999px;
+  color: var(--brand-hover);
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.brain-support {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 2;
+  width: max-content;
+  max-width: min(100%, 340px);
+  transform: translateX(-50%);
+  color: color-mix(in srgb, var(--fg) 72%, transparent);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.55s ease;
+  pointer-events: none;
+}
+
+.brain-support--visible {
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+   Site background (ADDITIVE — nothing above is edited)
+--------------------------------------------------------------------------- */
+
+/* Fixed decorative line-art layer: sits above the html/body background paint
+   (negative z-index in the root stacking context) and below all content.
+   The centre is dimmed via a mask (not colour) so text columns keep AA
+   contrast over the drawings. */
+.site-background {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(ellipse 70% 64% at 50% 44%, rgba(0, 0, 0, 0.62), #000 80%);
+  mask-image: radial-gradient(ellipse 70% 64% at 50% 44%, rgba(0, 0, 0, 0.62), #000 80%);
+}
+
+/* Decision A: always-dark screens (workspace / onboarding / login) whose base
+   colour equals --bg drop the opaque fill in the DARK theme only — the pixels
+   are identical (same colour underneath) and the site background shows
+   through. The light theme keeps the dark base: those screens are
+   intentionally dark regardless of theme. */
+.screen-base {
+  background: #050b1a;
+}
+
+html.dark .screen-base {
+  background: transparent;
+}
+
+/* Decision A (landing): the four base-coloured sections (Stats / Features /
+   Showcase / FAQ) drop their opaque fill — the pixels are identical (the
+   body's --bg paints underneath) and the site background shows through. */
+.section-base {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   Translucent bands + panel-free two-column hero (ADDITIVE)
+--------------------------------------------------------------------------- */
+
+/* The five deep bands keep their separation but let the art show through
+   (~62% of the deep colour — tuned by eye against the site background). */
+.band-deep {
+  background-color: color-mix(in srgb, var(--bg-deep) 62%, transparent);
+}
+
+/* Hero: stacked on phone/tablet (copy centred, brain below), two columns from
+   lg — copy left inside the container-page text column (so the in-column
+   dimming always covers it), brain right in a reserved aspect-square box that
+   overflows its grid track toward the viewport edge. */
+.hero-grid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  text-align: center;
+}
+
+.hero-visual-wrap {
+  width: 100%;
+}
+
+.hero-visual {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+/* Reserved space — the brain never shifts layout while loading. */
+.hero-brain-box {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 1;
+  /* edge-fade so the canvas has no visible edges */
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 54%, transparent 91%);
+  mask-image: radial-gradient(ellipse at center, #000 54%, transparent 91%);
+}
+
+.hero-brain-label {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  /* the pill is position:absolute (legacy .brain-label) and the support text
+     resolves max-width against this box — it must be full width, not 0 */
+  width: 100%;
+  min-height: 24px;
+  margin-top: 18px;
+}
+
+@media (min-width: 1024px) {
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 500px);
+    gap: clamp(24px, 3vw, 56px);
+    align-items: center;
+  }
+
+  .hero-copy {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  /* slightly smaller headline in the column so the copy keeps its shape */
+  .hero-title {
+    font-size: clamp(40px, 4vw, 58px);
+  }
+
+  .hero-actions {
+    justify-content: flex-start;
+  }
+
+  .hero-visual {
+    width: 100%;
+  }
+
+  .hero-visual-wrap {
+    /* wider than its 500px track → bleeds right toward the viewport edge */
+    justify-self: start;
+    width: min(46vw, 820px);
+  }
+}
