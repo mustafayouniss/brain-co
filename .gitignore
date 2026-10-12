@@ -22,13 +22,13 @@ pgdata/
 build/
 dist/
 *.egg-info/
-<<<<<<< HEAD
-=======
 
 # Dependencies
 node_modules/
 
->>>>>>> origin/main
+# Next.js build artifacts
+.next/
+frontend/.next/
 
 # Runtime raw storage
 raw_storage/
