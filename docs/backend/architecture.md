@@ -31,6 +31,10 @@ Every folder in the repository and its single-line designated purpose:
 - `ai/prompts/`: Template interpolation, variable extraction, and chat formatting (`prompt_template.py`).
 - `ai/config/`: Centralized configuration loading multi-provider credentials from `.env` (`ai_config.py`).
 - `ai/tests/`: Automated Pytest suite (54 unit tests) covering swappability, contracts, error normalization, and mock generations.
+- `data-engineering/`: Data engineering workspace containing lakehouse, streaming, ingestion, and evaluation assets.
+- `data-engineering/orgbrain_ingest/`: Pure Python package implementing the Foundational Source Ingestion Pipeline (`ingestion/` orchestration, validation, checksums; `storage/` abstractions and local implementation).
+- `data-engineering/fixtures/ingestion/`: Deterministic evaluation fixtures (`valid_small.pdf`, `valid_small.txt`, `empty.pdf`, `unsupported_file.xyz`).
+- `data-engineering/tests/`: Automated pytest unit test suite (24 unit tests) covering validation, checksum, storage backends, and pipeline orchestration.
 
 ---
 
@@ -143,5 +147,6 @@ The following versions were deployed, executed, and verified:
 |---|---|---|
 | `6dd2ff08b0bb` | — | Enables `pgvector` extension |
 | `778be99882b6` | `users` | User accounts; UUID PK, case-insensitive unique email, VARCHAR+CHECK role, timezone-aware `created_at` |
+| `e819b932c01a` | `sources` | Raw ingested source documents; UUID PK, original_filename, content_type, size_bytes > 0 check, SHA-256 checksum, storage_key, storage_mode, source_type, uploaded_by FK (users.id), status, created_at, updated_at |
 
 

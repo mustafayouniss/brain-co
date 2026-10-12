@@ -29,3 +29,6 @@ dist/
 node_modules/
 
 >>>>>>> origin/main
+
+# Runtime raw storage
+raw_storage/

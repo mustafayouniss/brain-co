@@ -3,9 +3,21 @@
 ## Done
 - Moved all backend documentation into `docs/backend/`.
 - Deleted outdated copies from root `docs/`.
+- Implemented Foundational Source Ingestion Pipeline in `data-engineering/orgbrain_ingest/` (validation, SHA-256 fingerprinting, raw storage abstraction, LocalStorageBackend, orchestration pipeline).
+- Authored 24 unit tests in `data-engineering/tests/` (100% passing).
+- Created deterministic evaluation fixtures in `data-engineering/fixtures/ingestion/`.
+- Created `Source` SQLAlchemy model in `backend/app/models/source.py` and exported in `backend/app/models/__init__.py`.
+- Created Pydantic `SourceResponse` schema in `backend/app/schemas/source.py`.
+- Created `source_service.py` with caller-owned commit / flush pattern.
+- Created Alembic migration `e819b932c01a_create_sources_table.py`.
+- Created `backend/tests/test_source_model.py`.
+- Created `backend/app/api/v1/sources.py` endpoint handler.
+- Created technical documentation in `docs/source-ingestion.md`.
 
 ## Next
-- None (cleanup complete).
+- Resolve pre-existing merge conflicts in `config.py`, `deps.py`, `v1/__init__.py`, `errors.py`.
+- Apply Alembic migration `e819b932c01a` to create `sources` table in database.
+- Mount `/api/v1/sources` router and run backend integration tests.
 
 ## Blockers
-- None.
+- Pre-existing Git merge conflicts in `backend/app/core/config.py`, `backend/app/api/deps.py`, `backend/app/api/v1/__init__.py`, and `backend/app/core/errors.py` block Alembic execution, API route mounting, and backend test runner.

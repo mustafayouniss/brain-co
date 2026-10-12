@@ -66,8 +66,12 @@ This guide explains how all the pieces of our backend setup fit together. If you
 - **The Analogy**: A universal power adapter. Whether you plug in your phone in Egypt, China, or the US, the adapter fits the local wall outlet and provides clean electricity to your phone. The Brain's business logic is your phone; OpenAI, DeepSeek, Kimi, OpenRouter, and Ollama are different international wall outlets. The `ProviderRegistry` and `LLMService` adapt to each without requiring you to buy a new phone.
 - **Why we need it**: The organization can switch from OpenAI to DeepSeek (or any other provider) with a single environment variable change, without rewriting a single line of legal reasoning or case processing code.
 
----
+### 13. Source Ingestion Pipeline & Source Memory
+- **Plain English**: A secure intake pipeline that accepts raw files, verifies their format and size, calculates a unique cryptographic fingerprint (SHA-256), saves the raw document safely into storage, and logs an immutable metadata record into PostgreSQL.
+- **The Analogy**: Like the evidence intake desk at a court archive. When a document arrives, the registrar doesn't immediately interpret it or declare it as fact. Instead, they inspect the paper, stamp it with a tamper-proof barcode, store the physical document securely in the archives, and register the receipt into the official ledger.
+- **Why we need it**: All future reasoning, parsing, and legal knowledge discovery requires an unbroken chain of custody back to the exact physical source document.
 
+---
 
 ## 2. Commands You Will Use Every Day
 

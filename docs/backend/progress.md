@@ -27,6 +27,7 @@
 - [x] **T6** — Security utilities: password hashing via `argon2-cffi==25.1.0` (Argon2id, 1-128 char limit, safe verify, dummy hash timing mitigation, rehash check), JWT create/decode (`pyjwt`, pinned HS256, strictly `sub`/`iat`/`exp` claims, `TokenSecurityError`), `SECRET_KEY` validation (>=32 chars, no placeholder) and secure `.env` provisioning, 42 passing unit tests, `docs/security.md`.
 - [x] **AI-0** — Rebuilt AI Engine in Python 3.12 (`ai/`): provider-agnostic async foundation (`ILLMProvider`, `LLMService`, `PromptTemplate`, `AIConfig`). Integrated wide provider ecosystem via `ProviderRegistry` (`OpenAIProvider`, `DeepSeekProvider`, `OpenRouterProvider`, `KimiProvider`, `OllamaProvider`, `FakeLLMProvider`). Normalizes vendor errors into `LLMError`. 54 passing unit tests in Pytest.
 
+- [x] **INGEST-0** — Foundational Source Ingestion Pipeline: `data-engineering/orgbrain_ingest` (validation, SHA-256 fingerprinting, raw storage abstraction, LocalStorageBackend, orchestration pipeline, 24 passing unit tests), `backend/app/models/source.py`, `backend/app/schemas/source.py`, `backend/app/services/source_service.py`, Alembic migration `e819b932c01a`, `test_source_model.py`, and `docs/source-ingestion.md`.
 
 ## What's Next (Ring 0 — remaining tasks, in order)
 - [ ] **T7** — Auth endpoints: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`.
@@ -39,4 +40,4 @@
 - None. (Starlette prefers httpx2; httpx still worked but emitted StarletteDeprecationWarning; resolved by installing httpx2==2.13.1 (https://pypi.org/project/httpx2/, maintained by Pydantic, source github.com/pydantic/httpx2). Earlier mention of issue 2826 was UNVERIFIED and removed.)
 
 ## Broken / Blockers
-- None.
+- Pre-existing merge conflicts in `backend/app/core/config.py`, `backend/app/api/deps.py`, `backend/app/api/v1/__init__.py`, and `backend/app/core/errors.py` prevent Alembic execution, endpoint mounting, and backend test execution. Left untouched per policy.
