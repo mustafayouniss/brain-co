@@ -71,6 +71,11 @@ This guide explains how all the pieces of our backend setup fit together. If you
 - **The Analogy**: Like the evidence intake desk at a court archive. When a document arrives, the registrar doesn't immediately interpret it or declare it as fact. Instead, they inspect the paper, stamp it with a tamper-proof barcode, store the physical document securely in the archives, and register the receipt into the official ledger.
 - **Why we need it**: All future reasoning, parsing, and legal knowledge discovery requires an unbroken chain of custody back to the exact physical source document.
 
+### 14. Neo4j (Graph Database)
+- **Plain English**: A database specialized in storing and querying intricate networks of connections (nodes and relationships), such as legal citation graphs, cross-case entity links, and multi-hop relationships.
+- **The Analogy**: Like a detective's case corkboard with photos connected by strings of yarn. While Postgres is perfect for neat tables and ledgers, Neo4j is built to immediately answer questions like "how is Concept A linked to Law B through five intermediate judicial rulings?"
+- **Why we need it**: Prepared in local infrastructure for higher rings to power graph-based knowledge traversal and legal reasoning.
+
 ---
 
 ## 2. Commands You Will Use Every Day

@@ -91,6 +91,7 @@ The following versions were deployed, executed, and verified:
 - **Docker Image**: `pgvector/pgvector:pg17`
 - **Database Engine**: `PostgreSQL 17.11 (Debian 17.11-1.pgdg12+2)` on `x86_64-pc-linux-gnu`
 - **Postgres Extension**: `vector` (pgvector) version `0.8.7`
+- **Graph Database Image**: `neo4j:5-community` (ports 7474, 7687, volume `neo4j_data`)
 - **SQLAlchemy**: `2.0.54` (pinned in `backend/requirements.txt`)
 - **Psycopg**: `3.3.6` (binary driver `psycopg-binary==3.3.6`)
 - **Alembic**: `1.20.0`

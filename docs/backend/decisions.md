@@ -69,6 +69,11 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
 - Multi-Provider Scalability: Reusable `BaseOpenAICompatibleProvider` powers `OpenAIProvider`, `DeepSeekProvider` (deepseek-chat, deepseek-reasoner/R1), `OpenRouterProvider`, `KimiProvider` (moonshot-v1), `OllamaProvider` (local), and `FakeLLMProvider`.
 - Zero Code Changes in Higher Rings: Providers are managed via `ProviderRegistry` and `AIConfig` (`.env`). Higher rings (Rings 1–10) depend strictly on `ILLMProvider` and `LLMService` abstractions. Dynamic swappability via `set_provider()` or `.env`.
 
+## D-015 — Neo4j Graph Database Container Added (2026-10-12)
+- Neo4j 5 Community (`neo4j:5-community`) is added to `docker-compose.yml` with ports 7474 (HTTP) and 7687 (Bolt) and named volume `neo4j_data`.
+- Purpose: Prepared as an infrastructure service to support knowledge graph exploration, citation networks, and multi-hop relationship reasoning in higher rings.
+- Invariant: Ring 0 and Foundational Ingestion remain purely on PostgreSQL + pgvector; backend core transactions and Source Memory remain independent of Neo4j.
+
 ---
 
 ## Open questions (do not assume an answer)
