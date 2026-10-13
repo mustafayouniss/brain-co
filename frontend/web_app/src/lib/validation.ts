@@ -25,10 +25,10 @@ export const contactSchema = z.object({
 
 export type ContactInput = z.infer<typeof contactSchema>;
 
-/** Login form — the source app has no backend, so this mirrors its intent. */
+/** Login form — Backend JWT authentication (docs/backend/api/auth.md). */
 export const loginSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
-  password: z.string().min(8, "Password must be at least 8 characters."),
+  password: z.string().min(12, "Password must be at least 12 characters."),
   remember: z.boolean().optional(),
 });
 

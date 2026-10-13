@@ -1,7 +1,4 @@
-<<<<<<< HEAD
-=======
 import sys
->>>>>>> origin/main
 from pathlib import Path
 
 from pydantic import field_validator
@@ -9,15 +6,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
+DATA_ENGINEERING_ROOT = PROJECT_ROOT / "data-engineering"
 
-<<<<<<< HEAD
-=======
-# Ensure repository root is in sys.path so 'ai' package is discoverable regardless of execution cwd
+# Ensure repository root is in sys.path so 'ai' and 'data-engineering' packages are discoverable
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-
->>>>>>> origin/main
+if str(DATA_ENGINEERING_ROOT) not in sys.path:
+    sys.path.insert(0, str(DATA_ENGINEERING_ROOT))
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -28,13 +23,13 @@ class Settings(BaseSettings):
     )
 
     DATABASE_URL: str = (
-        "postgresql+psycopg://postgres:postgres@localhost:5432/orgbrain_legal"
+        "postgresql+psycopg://postgres:postgres@localhost:5433/orgbrain_legal"
     )
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_DB: str = "orgbrain_legal"
     POSTGRES_HOST: str = "localhost"
-    POSTGRES_PORT: int = 5432
+    POSTGRES_PORT: int = 5433
     POSTGRES_TEST_DB: str = "orgbrain_legal_test"
 
     SECRET_KEY: str

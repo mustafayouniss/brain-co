@@ -6,6 +6,7 @@ import { Toaster } from "sonner";
 import Script from "next/script";
 import { site } from "@/content/site";
 import { CookieConsent } from "@/components/cookie-consent";
+import { AIChatWidget } from "@/components/ai-chat-widget";
 
 type Consent = "granted" | "denied" | null;
 const CONSENT_KEY = "brainco:cookie-consent";
@@ -67,6 +68,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <Analytics />
       <ServiceWorkerRegistration />
       <CookieConsent />
+      <AIChatWidget />
       <Toaster
         position="bottom-right"
         offset={16}

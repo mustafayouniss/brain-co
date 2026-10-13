@@ -231,19 +231,20 @@ The following are strictly out of scope for this foundation and have **not** bee
 
 ## 8. Known Limitations & Integration Blockers
 
-The following files on branch `main` contain pre-existing Git merge conflict markers (`<<<<<<< HEAD` / `=======` / `>>>>>>> origin/main`):
-1. `backend/app/core/config.py`
-2. `backend/app/api/deps.py`
-3. `backend/app/api/v1/__init__.py`
-4. `backend/app/core/errors.py`
-5. `.gitignore`
+### Resolved Issues (2026-10-13)
+The following files previously contained Git merge conflict markers but have been resolved:
+1. `backend/app/core/config.py` - RESOLVED
+2. `backend/app/api/deps.py` - RESOLVED
+3. `backend/app/api/v1/__init__.py` - RESOLVED
+4. `backend/app/core/errors.py` - RESOLVED
+5. `AGENTS.md` - RESOLVED
 
-### Impact:
-- **Alembic Execution**: `alembic upgrade head` imports `app.core.config`, which raises `SyntaxError: invalid syntax` due to the conflict markers in `config.py`. Therefore, running migrations against the live database is **BLOCKED** pending conflict resolution.
-- **Backend Model & API Tests**: `backend/tests/conftest.py` imports `app.core.config.settings`, which also fails with `SyntaxError`. Therefore, running pytest on backend files is **BLOCKED** pending conflict resolution.
-- **API Mounting**: Registering `/api/v1/sources` router is **BLOCKED** until `backend/app/api/v1/__init__.py` conflicts are resolved.
+### Current Integration Status:
+- **Alembic Execution**: Migration `e819b932c01a` has been successfully applied.
+- **Backend Model & API Tests**: All 108 backend tests pass.
+- **API Mounting**: `sources.router` exists but is temporarily unmounted in `backend/app/api/v1/__init__.py` due to `orgbrain_ingest` package not being installed in the virtual environment. The data-engineering package needs to be properly installed as a dependency for full integration.
 
-### Action Plan After Merge Conflict Resolution:
-1. Run `alembic upgrade head` in `backend/` to apply migration `e819b932c01a`.
-2. Mount `sources.router` in `backend/app/api/v1/__init__.py`.
-3. Run `pytest backend/tests/test_source_model.py`.
+### Action Plan for Full Source Ingestion Integration:
+1. Install `data-engineering/orgbrain_ingest` as a package (e.g., via pip install -e or pyproject.toml setup)
+2. Uncomment sources router import in `backend/app/api/v1/__init__.py`
+3. Run integration tests for source ingestion endpoint

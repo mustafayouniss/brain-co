@@ -76,8 +76,6 @@ def register_exception_handlers(app: FastAPI) -> None:
             },
         )
 
-<<<<<<< HEAD
-=======
     try:
         from ai.core.types.error import LLMError, LLMErrorType
 
@@ -113,8 +111,6 @@ def register_exception_handlers(app: FastAPI) -> None:
             )
     except ImportError:
         pass
-
->>>>>>> origin/main
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(
         request: Request, exc: Exception

@@ -1,47 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import {
-  createSessionToken,
-  sessionCookieOptions,
-  SESSION_COOKIE,
-  verifySessionToken,
-} from "@/lib/session";
-
-/** GET /api/auth/session — current session (used by the navbar). */
-export async function GET(request: NextRequest) {
-  const token = request.cookies.get(SESSION_COOKIE)?.value;
-  const user = verifySessionToken(token);
-  return NextResponse.json({ user: user ? { email: user.email, name: user.name } : null });
-}
-
-const startSchema = z.object({
-  email: z.string().trim().email(),
-  name: z.string().trim().min(1).max(120),
-});
+import { getCurrentUser } from "@/lib/backend-auth";
 
 /**
- * POST /api/auth/session — called when onboarding finishes ("Enter your
- * workspace"), mirroring the source flow where completing onboarding is what
- * grants access to the workspace.
+ * GET /api/auth/session — current session from backend JWT.
+ * 
+ * This endpoint validates the stored backend token and returns the user profile
+ * from the backend /auth/me endpoint.
  */
-export async function POST(request: NextRequest) {
-  let body: unknown;
+export async function GET(request: NextRequest) {
+  // Get token from Authorization header (preferred) or cookie (fallback)
+  const authHeader = request.headers.get("Authorization");
+  const token = authHeader?.replace("Bearer ", "") || request.cookies.get("backend_token")?.value;
+
+  if (!token) {
+    return NextResponse.json({ user: null });
+  }
+
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    const user = await getCurrentUser(token);
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.full_name,
+        role: user.role,
+        is_active: user.is_active,
+      },
+    });
+  } catch (error) {
+    // Token is invalid or expired
+    return NextResponse.json({ user: null });
   }
-
-  const parsed = startSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid input." }, { status: 400 });
-  }
-
-  const response = NextResponse.json({ ok: true });
-  response.cookies.set(
-    SESSION_COOKIE,
-    createSessionToken(parsed.data),
-    sessionCookieOptions,
-  );
-  return response;
 }

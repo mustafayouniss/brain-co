@@ -26,6 +26,7 @@ pgvector==0.5.0
 pluggy==1.6.0
 psycopg==3.3.6
 psycopg-binary==3.3.6
+python-multipart==0.0.32
 pycparser==3.1
 pydantic==2.13.5
 pydantic-core==2.46.5

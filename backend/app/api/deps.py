@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 """
 Request-scoped dependencies for FastAPI route handlers.
 
@@ -7,6 +6,7 @@ Dependency hierarchy
 get_db
   └─ get_current_user   (validates Bearer token, returns active User)
        └─ require_admin (asserts role == "admin" from the DB row)
+  └─ get_llm_service   (provides configured LLMService instance)
 
 Security notes
 --------------
@@ -19,6 +19,8 @@ Security notes
 """
 import uuid
 from collections.abc import Generator
+from functools import lru_cache
+from typing import TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -28,23 +30,8 @@ from app.core.security import TokenSecurityError, decode_access_token
 from app.db.session import SessionLocal
 from app.models.user import User
 
-
-# ---------------------------------------------------------------------------
-# Database session
-# ---------------------------------------------------------------------------
-=======
-from collections.abc import Generator
-from functools import lru_cache
-from typing import TYPE_CHECKING
-
-from sqlalchemy.orm import Session
-
-from app.db.session import SessionLocal
-
 if TYPE_CHECKING:
     from ai.core.services.llm_service import LLMService
-
->>>>>>> origin/main
 
 def get_db() -> Generator[Session, None, None]:
     """Dependency for providing a database session to API route handlers.
@@ -58,7 +45,6 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-<<<<<<< HEAD
 # ---------------------------------------------------------------------------
 # Auth constants
 # ---------------------------------------------------------------------------
@@ -128,7 +114,12 @@ def require_admin(
             detail="Insufficient privileges",
         )
     return current_user
-=======
+
+
+# ---------------------------------------------------------------------------
+# LLM service dependency
+# ---------------------------------------------------------------------------
+
 @lru_cache()
 def get_llm_service() -> "LLMService":
     """Dependency for providing the singleton configured LLMService instance.
@@ -139,5 +130,3 @@ def get_llm_service() -> "LLMService":
     from ai.config.ai_config import ai_config
 
     return ai_config.create_service()
-
->>>>>>> origin/main

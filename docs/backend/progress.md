@@ -29,15 +29,20 @@
 
 - [x] **INGEST-0** — Foundational Source Ingestion Pipeline: `data-engineering/orgbrain_ingest` (validation, SHA-256 fingerprinting, raw storage abstraction, LocalStorageBackend, orchestration pipeline, 24 passing unit tests), `backend/app/models/source.py`, `backend/app/schemas/source.py`, `backend/app/services/source_service.py`, Alembic migration `e819b932c01a`, `test_source_model.py`, and `docs/source-ingestion.md`.
 
+- [x] **T7** — Auth endpoints: `POST /api/v1/auth/login`, `GET /api/v1/auth/me` implemented and tested (2026-10-13).
+- [x] **T8** — Authorization dependencies: `get_current_user`, `require_admin`, admin-only sample endpoint implemented and tested (2026-10-13).
+- [x] **T9** — First admin: seed command `backend/app/scripts/create_admin.py` implemented and tested (2026-10-13).
+- [x] **T10** — API contract: `docs/backend/api/auth.md` created with complete endpoint specifications (2026-10-13).
+
 ## What's Next (Ring 0 — remaining tasks, in order)
-- [ ] **T7** — Auth endpoints: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`.
-- [ ] **T8** — Authorization dependencies: `get_current_user`, `require_admin`, admin-only sample endpoint.
-- [ ] **T9** — First admin: seed command (not a public endpoint).
-- [ ] **T10** — Frontend contract: `docs/api/auth.md`.
 - [ ] **T11** — CI: GitHub Actions. *(Only after OPEN-7 is decided.)*
+
+## Integration Notes (2026-10-13)
+- **Sources endpoint**: `backend/app/api/v1/sources.py` is implemented but temporarily unmounted due to `orgbrain_ingest` package not being installed in the virtual environment. Requires package installation setup for full integration.
+- **Frontend auth**: Frontend (Next.js) uses simulated cookie-based auth; backend uses JWT Bearer tokens. Integration requires contract agreement (OPEN-5).
 
 ## Known Issues
 - None. (Starlette prefers httpx2; httpx still worked but emitted StarletteDeprecationWarning; resolved by installing httpx2==2.13.1 (https://pypi.org/project/httpx2/, maintained by Pydantic, source github.com/pydantic/httpx2). Earlier mention of issue 2826 was UNVERIFIED and removed.)
 
 ## Broken / Blockers
-- Pre-existing merge conflicts in `backend/app/core/config.py`, `backend/app/api/deps.py`, `backend/app/api/v1/__init__.py`, and `backend/app/core/errors.py` prevent Alembic execution, endpoint mounting, and backend test execution. Left untouched per policy.
+- None. Previous merge conflicts in `backend/app/core/config.py`, `backend/app/api/deps.py`, `backend/app/api/v1/__init__.py`, and `backend/app/core/errors.py` have been resolved.
