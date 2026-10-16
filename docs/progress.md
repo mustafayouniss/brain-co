@@ -31,6 +31,20 @@
   - Added CSRF protection for state-changing API routes
   - Cookie expiry aligned with backend JWT lifetime (60 minutes)
   - Verified login, session, logout, and AI proxy via curl
+- **Removed public self-registration to align with Ring 0 specifications**:
+  - Replaced public registration form with admin-provisioning message
+  - Updated onboarding flow to redirect to login instead of account creation
+  - Aligned with Ring 0 T9: "no public sign-up; the admin creates employee accounts"
+  - Frontend typecheck and production build pass
+  - Backend user tests pass (25/25)
+- **Added floating AI chat widget for integration testing**:
+  - Created reusable floating chat widget component accessible from bottom-right corner
+  - Widget uses existing `/api/ai/prompt` endpoint (Next.js) → `/api/v1/ai/prompt` (FastAPI) → LLMService
+  - Reuses existing AI service abstraction and provider configuration
+  - Session-based authentication via HttpOnly cookies
+  - Displays loading, success, and error states
+  - Frontend typecheck and production build pass
+  - Verified via curl with authentication: returns FakeLLM response
 
 ## Next
 - Resolve pre-existing merge conflicts in `config.py`, `deps.py`, `v1/__init__.py`, `errors.py`.

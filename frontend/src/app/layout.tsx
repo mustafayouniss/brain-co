@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { SiteBackground } from "@/components/site-background/site-background";
+import { FloatingChatWidget } from "@/components/floating-chat-widget";
 import { site } from "@/content/site";
 import "./globals.css";
 
@@ -100,6 +101,7 @@ export default function RootLayout({
         {/* Decorative line-art background: fixed, z-index -1, pointer-free. */}
         <SiteBackground />
         <Providers>{children}</Providers>
+        <FloatingChatWidget />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
