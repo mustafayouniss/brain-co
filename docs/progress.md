@@ -83,12 +83,19 @@
   - Added `BRAIN_SYSTEM_PROMPT` to `backend/app/api/v1/ai.py`, grounded in PROJECT_SCOPE.md, directing legal questions to the Legal workspace.
   - Acceptance tests verified via live openai/gpt-4o-mini via OpenRouter: BRAIN_GENERAL_ASSISTANT_RELEASE_SUCCESS confirmed.
   - All 5 domain-separation acceptance tests passed (Tests A–E).
-  - Full test suite passes: 122 backend + 24 data-engineering + 13 AI integration (159 total).
+
+- **OpenRouter Secret Remediation & Workspace Legal Domain Separation**:
+  - Remediated unpublished commit `c9ae78f7` containing raw OpenRouter API key; non-destructively scrubbed history into clean commits `278d898a` and `672e1c52`.
+  - Created backups: in-repo `backup-pre-remediation-main` and verified external bundle `brain-co-main-backup-2026-10-17.bundle`.
+  - Zero secrets verified across all unpublished commits (`af5e902d..HEAD`).
+  - Added `LEGAL_SYSTEM_PROMPT` to `backend/app/api/v1/ai.py` and supported `context: "legal"` in `PromptRequest`.
+  - Integrated `frontend/src/components/workspace/workspace-client.tsx` to request legal context.
+  - Full test suite passes: 124 backend + 24 data-engineering + 15 AI integration (163 passing tests).
   - Frontend typecheck and production build pass with 0 errors.
 
 ## Next
-- Address frontend dependency vulnerabilities (npm audit fix --force)
-- Prepare clean commit of Ring 0 verified state upon user authorization
+- Execute safe `git push origin main` upon user authorization (all secret scans and release gates passed).
+- User action required: revoke exposed OpenRouter API key in provider dashboard and issue replacement.
 
 ## Blockers
-- None. Brain general assistant identity, domain separation, UI/UX transformation, AI integration, and anonymous testing all verified end-to-end.
+- None. Push is prepared and fully validated. Awaiting user authorization.

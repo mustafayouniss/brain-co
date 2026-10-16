@@ -192,7 +192,7 @@ function AIEmployeePanel() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt: trimmedInput }),
+        body: JSON.stringify({ prompt: trimmedInput, context: "legal" }),
       });
 
       if (!response.ok) {

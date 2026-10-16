@@ -268,3 +268,47 @@ def test_v1_ai_prompt_endpoint_provider_error(client, auth_headers):
         assert "Upstream provider unreachable" in data["error"]["message"]
     finally:
         app.dependency_overrides.pop(get_llm_service, None)
+
+
+def test_v1_ai_prompt_uses_brain_system_prompt_by_default(client, auth_headers):
+    """Verify default prompt request uses BRAIN_SYSTEM_PROMPT."""
+    from app.api.v1.ai import BRAIN_SYSTEM_PROMPT
+    from app.main import app
+
+    fake_provider = FakeLLMProvider(custom_response="Brain response")
+    fake_service = LLMService(provider=fake_provider)
+
+    app.dependency_overrides[get_llm_service] = lambda: fake_service
+    try:
+        response = client.post("/api/v1/ai/prompt", json={"prompt": "What is Brain?"}, headers=auth_headers)
+        assert response.status_code == 200
+        assert len(fake_provider.recorded_requests) == 1
+        req = fake_provider.recorded_requests[0]
+        assert req.messages[0].role == "system"
+        assert req.messages[0].content == BRAIN_SYSTEM_PROMPT
+    finally:
+        app.dependency_overrides.pop(get_llm_service, None)
+
+
+def test_v1_ai_prompt_uses_legal_system_prompt_when_legal_context_requested(client, auth_headers):
+    """Verify request with context='legal' uses LEGAL_SYSTEM_PROMPT."""
+    from app.api.v1.ai import LEGAL_SYSTEM_PROMPT
+    from app.main import app
+
+    fake_provider = FakeLLMProvider(custom_response="Legal analysis response")
+    fake_service = LLMService(provider=fake_provider)
+
+    app.dependency_overrides[get_llm_service] = lambda: fake_service
+    try:
+        response = client.post(
+            "/api/v1/ai/prompt",
+            json={"prompt": "Explain Egyptian contract law", "context": "legal"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert len(fake_provider.recorded_requests) == 1
+        req = fake_provider.recorded_requests[0]
+        assert req.messages[0].role == "system"
+        assert req.messages[0].content == LEGAL_SYSTEM_PROMPT
+    finally:
+        app.dependency_overrides.pop(get_llm_service, None)
