@@ -11,10 +11,24 @@ const COOKIE_MAX_AGE = 60 * 60; // 60 minutes in seconds (matches backend ACCESS
  */
 function verifySameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
-  const host = request.headers.get("host");
   const referer = request.headers.get("referer");
+  const host = request.headers.get("host");
 
-  // In development/same-site, Origin may be null
+  // In development/same-site, Origin may be null - check referer instead
+  if (!origin && referer) {
+    try {
+      const refererUrl = new URL(referer);
+      const allowedHosts = [
+        "localhost:3000",
+        "localhost:3001",
+        host || "",
+      ];
+      return allowedHosts.includes(refererUrl.host);
+    } catch {
+      return false;
+    }
+  }
+
   if (!origin) {
     return true;
   }
