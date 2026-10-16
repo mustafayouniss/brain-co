@@ -37,8 +37,9 @@ export default function UsageScreen() {
 
   function choose() {
     if (!selected) return;
-    update({ accountMode: selected });
-    router.push("/onboarding/account");
+    // Skip account creation - public self-registration is not supported
+    // Redirect to login where users can log in with admin-provided credentials
+    router.push("/login?next=/workspace");
   }
 
   return (
