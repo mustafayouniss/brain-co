@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { getStoredToken, getCurrentUser } from "@/lib/backend-auth";
 
 export interface SessionUser {
   email: string;
@@ -14,25 +13,25 @@ interface SessionState {
 }
 
 /**
- * Reads the current session once on mount using backend JWT token.
- * Validates token with FastAPI backend /api/v1/auth/me endpoint.
+ * Reads the current session once on mount using server-side session.
+ * Validates session via Next.js API route /api/auth/session.
  */
 export function useSession() {
   const [state, setState] = React.useState<SessionState>({ user: null, loading: true });
 
   const refresh = React.useCallback(async () => {
     try {
-      const token = getStoredToken();
-      if (!token) {
+      const response = await fetch("/api/auth/session");
+      if (!response.ok) {
         setState({ user: null, loading: false });
         return;
       }
 
-      const user = await getCurrentUser(token);
+      const userData = await response.json();
       setState({ 
         user: { 
-          email: user.email, 
-          name: user.full_name 
+          email: userData.email, 
+          name: userData.full_name 
         }, 
         loading: false 
       });
@@ -49,8 +48,11 @@ export function useSession() {
   }, [refresh]);
 
   const logout = React.useCallback(async () => {
-    const { clearToken } = await import("@/lib/backend-auth");
-    clearToken();
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
     setState({ user: null, loading: false });
   }, []);
 

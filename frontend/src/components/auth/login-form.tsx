@@ -12,7 +12,6 @@ import { loginSchema, type LoginInput } from "@/lib/validation";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/auth/password-input";
-import { loginToBackend, storeToken } from "@/lib/backend-auth";
 
 const copy = authCopy.login;
 
@@ -50,14 +49,22 @@ export function LoginForm() {
     if (isSubmitting) return; // hard guard against double submit
     setServerError(null);
     try {
-      const response = await loginToBackend({
-        email: values.email,
-        password: values.password,
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: values.email,
+          password: values.password,
+        }),
       });
-      
-      // Store JWT token for subsequent requests
-      storeToken(response.access_token);
-      
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || copy.invalid);
+      }
+
       toast.success(copy.success);
       router.push(next);
       router.refresh();

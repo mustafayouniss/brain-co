@@ -32,13 +32,10 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(login);
     }
   } catch (error) {
-    // If backend is unreachable, allow access in development
-    // In production, you might want to redirect to login
-    if (process.env.NODE_ENV === "production") {
-      const login = new URL("/login", request.url);
-      login.searchParams.set("next", "/workspace");
-      return NextResponse.redirect(login);
-    }
+    // Backend unreachable - fail closed and redirect to login
+    const login = new URL("/login", request.url);
+    login.searchParams.set("next", "/workspace");
+    return NextResponse.redirect(login);
   }
 
   return NextResponse.next();

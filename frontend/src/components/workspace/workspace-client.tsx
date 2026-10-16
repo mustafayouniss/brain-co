@@ -11,7 +11,6 @@ import { buttonClasses } from "@/components/ui/button";
 import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { useSession } from "@/hooks/use-session";
-import { getStoredToken } from "@/lib/backend-auth";
 
 const tabIds = ["overview", "cases", "clients", "knowledge", "insights", "ai-employee"] as const;
 const tabItems = workspaceCopy.tabs.map((label, index) => ({ id: tabIds[index], label }));
@@ -35,8 +34,11 @@ export function WorkspaceClient() {
   }, [hydrated, loading, user, router]);
 
   async function handleLogout() {
-    const { clearToken } = await import("@/lib/backend-auth");
-    clearToken();
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
     router.push("/login");
     router.refresh();
   }
@@ -179,12 +181,6 @@ function AIEmployeePanel() {
     const trimmedInput = input.trim();
     if (!trimmedInput || isLoading) return;
 
-    const token = getStoredToken();
-    if (!token) {
-      setError("Please login to use AI assistant");
-      return;
-    }
-
     setMessages(prev => [...prev, { role: "user", content: trimmedInput }]);
     setInput("");
     setIsLoading(true);
@@ -194,7 +190,6 @@ function AIEmployeePanel() {
       const response = await fetch("/api/ai/prompt", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ prompt: trimmedInput }),

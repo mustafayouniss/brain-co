@@ -22,12 +22,20 @@
   - Frontend builds successfully, typecheck passes
   - Backend tests pass (108/108)
   - Auth and AI integration verified via curl
+- **Fixed authentication and session integration**:
+  - Implemented Next.js server-side login with HttpOnly cookies
+  - Created `/api/auth/login`, `/api/auth/logout`, `/api/auth/session` routes
+  - Removed localStorage JWT storage (deprecated functions kept for compatibility)
+  - Fixed proxy-storage token mismatch
+  - Removed development authentication bypass in proxy
+  - Added CSRF protection for state-changing API routes
+  - Cookie expiry aligned with backend JWT lifetime (60 minutes)
+  - Verified login, session, logout, and AI proxy via curl
 
 ## Next
 - Resolve pre-existing merge conflicts in `config.py`, `deps.py`, `v1/__init__.py`, `errors.py`.
 - Apply Alembic migration `e819b932c01a` to create `sources` table in database.
 - Mount `/api/v1/sources` router and run backend integration tests.
-- Create frontend `.env.local` from `.env.local.example` for local development
 - Address frontend dependency vulnerabilities (npm audit fix --force)
 - Test end-to-end frontend-backend-AI flow via browser UI
 

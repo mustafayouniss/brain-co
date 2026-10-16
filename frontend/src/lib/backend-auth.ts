@@ -107,7 +107,9 @@ export async function createUser(
 
 /**
  * Store token in localStorage (client-side only)
- * In production, consider httpOnly cookies from backend
+ * DEPRECATED: Use server-side HttpOnly cookies instead for security.
+ * This function is kept for backward compatibility only.
+ * In production, use httpOnly cookies from backend.
  */
 export function storeToken(token: string): void {
   if (typeof window !== "undefined") {
@@ -117,6 +119,8 @@ export function storeToken(token: string): void {
 
 /**
  * Retrieve stored token
+ * DEPRECATED: Use server-side HttpOnly cookies instead for security.
+ * This function is kept for backward compatibility only.
  */
 export function getStoredToken(): string | null {
   if (typeof window !== "undefined") {
@@ -127,6 +131,8 @@ export function getStoredToken(): string | null {
 
 /**
  * Clear stored token (logout)
+ * DEPRECATED: Use server-side HttpOnly cookies instead for security.
+ * This function is kept for backward compatibility only.
  */
 export function clearToken(): void {
   if (typeof window !== "undefined") {
@@ -136,6 +142,8 @@ export function clearToken(): void {
 
 /**
  * Get Authorization header value
+ * DEPRECATED: Use server-side HttpOnly cookies instead for security.
+ * This function is kept for backward compatibility only.
  */
 export function getAuthHeader(): { Authorization: string } | {} {
   const token = getStoredToken();
