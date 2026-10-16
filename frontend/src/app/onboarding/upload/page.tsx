@@ -107,10 +107,11 @@ export default function UploadScreen() {
     try {
       const res = await fetch(UPLOAD_ENDPOINT, { method: "POST", body });
       if (!res.ok) {
-        patch(item.id, { status: "Failed", error: copy.failedEndpoint(res.status) });
+        const errorData = await res.json().catch(() => ({}));
+        const message = errorData.error || copy.failedEndpoint(res.status);
+        patch(item.id, { status: "Failed", error: message });
         return;
       }
-      // Code path for when a real backend exists.
       patch(item.id, { status: "Processed", error: undefined });
     } catch {
       patch(item.id, { status: "Failed", error: copy.failedNetwork });

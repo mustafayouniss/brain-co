@@ -1,10 +1,8 @@
 """
 POST /api/v1/sources — Document ingestion endpoint.
 
-Integration status:
-- Implementation is complete and isolated.
-- Mounting in app.api.v1.__init__ and importing get_current_user from app.api.deps
-  is currently BLOCKED pending resolution of pre-existing Git merge conflicts.
+Ingests raw document files (PDF, TXT) into Source Memory using the
+Data Engineering IngestionPipeline and registers records in PostgreSQL.
 """
 from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status

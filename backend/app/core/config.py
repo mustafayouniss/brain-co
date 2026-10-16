@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -34,6 +34,17 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    ENVIRONMENT: str = "development"
+    AI_ANONYMOUS_TESTING_ENABLED: bool = False
+
+    @model_validator(mode="after")
+    def validate_production_anonymous(self) -> "Settings":
+        if self.AI_ANONYMOUS_TESTING_ENABLED and self.ENVIRONMENT.lower() == "production":
+            raise ValueError(
+                "AI_ANONYMOUS_TESTING_ENABLED cannot be enabled in production environment"
+            )
+        return self
 
     @field_validator("SECRET_KEY")
     @classmethod

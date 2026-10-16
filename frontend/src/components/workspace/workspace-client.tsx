@@ -197,7 +197,12 @@ function AIEmployeePanel() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "AI request failed");
+        const message =
+          errorData.error?.message ||
+          (typeof errorData.error === "string" ? errorData.error : "") ||
+          errorData.detail ||
+          "AI request failed";
+        throw new Error(message);
       }
 
       const data = await response.json();
@@ -219,7 +224,7 @@ function AIEmployeePanel() {
   return (
     <div className="rounded-2xl border border-[#202a3e] bg-[#0b1425] p-6">
       <h3 className="text-lg font-semibold text-white mb-4">AI Assistant</h3>
-      
+
       <div className="h-[400px] overflow-y-auto mb-4 space-y-4 p-4 rounded-xl bg-[#050b1a] border border-[#202a3e]">
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center text-center">

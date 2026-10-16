@@ -52,22 +52,20 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     
-    // Get token from HttpOnly cookie
+    // Get token from HttpOnly cookie if authenticated
     const token = request.cookies.get(COOKIE_NAME)?.value;
-    if (!token) {
-      return NextResponse.json(
-        { error: "Missing authentication" },
-        { status: 401 }
-      );
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
     }
 
-    // Forward request to backend with Bearer token
+    // Forward request to backend (backend authoritatively enforces auth or anonymous mode)
     const response = await fetch(`${BACKEND_API_URL}/ai/prompt`, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

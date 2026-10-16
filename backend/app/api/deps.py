@@ -96,6 +96,37 @@ def get_current_user(
     return user
 
 
+def get_ai_user_or_anonymous(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Validate Bearer token if provided, or allow anonymous access in dev if enabled."""
+    if credentials is not None:
+        try:
+            payload = decode_access_token(credentials.credentials)
+        except TokenSecurityError:
+            raise _AUTH_401
+
+        sub = payload.get("sub", "")
+        try:
+            user_id = uuid.UUID(sub)
+        except (ValueError, AttributeError):
+            raise _AUTH_401
+
+        user: User | None = db.get(User, user_id)
+        if user is None or not user.is_active:
+            raise _AUTH_401
+
+        return user
+
+    from app.core.config import settings
+
+    if settings.AI_ANONYMOUS_TESTING_ENABLED and settings.ENVIRONMENT.lower() != "production":
+        return None
+
+    raise _AUTH_401
+
+
 # ---------------------------------------------------------------------------
 # Admin-only gate
 # ---------------------------------------------------------------------------
