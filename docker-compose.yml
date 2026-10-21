@@ -36,6 +36,85 @@ services:
       retries: 5
       start_period: 20s
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: orgbrain-backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-orgbrain_legal}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-orgbrain_legal}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-orgbrain_legal_test}
+      SECRET_KEY: ${SECRET_KEY:-local-dev-secret-key-do-not-use-in-production-123456}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+
+      AI_PROVIDER: ${AI_PROVIDER:-fake}
+      AI_MODEL: ${AI_MODEL:-gpt-4o}
+      AI_TEMPERATURE: ${AI_TEMPERATURE:-0.7}
+
+      AI_FALLBACK_PROVIDERS: ${AI_FALLBACK_PROVIDERS:-openai,deepseek,openrouter,groq,kimi,huggingface}
+
+      # Provider-specific models
+      AI_MODEL_OPENAI: ${AI_MODEL_OPENAI:-}
+      AI_MODEL_DEEPSEEK: ${AI_MODEL_DEEPSEEK:-}
+      AI_MODEL_OPENROUTER: ${AI_MODEL_OPENROUTER:-}
+      AI_MODEL_KIMI: ${AI_MODEL_KIMI:-}
+      AI_MODEL_GROQ: ${AI_MODEL_GROQ:-openai/gpt-oss-120b}
+      AI_MODEL_HUGGINGFACE: ${AI_MODEL_HUGGINGFACE:-}
+      AI_MODEL_OLLAMA: ${AI_MODEL_OLLAMA:-}
+      
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      KIMI_API_KEY: ${KIMI_API_KEY:-}
+      KIMI_BASE_URL: ${KIMI_BASE_URL:-https://api.moonshot.cn/v1}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
+      HUGGINGFACE_BASE_URL: ${HUGGINGFACE_BASE_URL:-https://router.huggingface.co/v1}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+    ports:
+      - "8000:8000"
+    volumes:
+      - raw_storage:/app/backend/raw_storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: orgbrain-frontend
+    restart: always
+    
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_BACKEND_API_URL: http://backend:8000/api/v1
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   pgdata:
   neo4j_data:
+  raw_storage:

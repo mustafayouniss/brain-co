@@ -39,7 +39,9 @@ Higher Brain Rings (Rings 1–10: Brain Core, Knowledge, Legal, Reasoning, Whats
    * **FakeLLMProvider:** Zero-cost, deterministic mock provider for unit testing & CI.
 3. **Async-First Execution:** Uses Python `asyncio` and `httpx.AsyncClient` for high concurrency without blocking the FastAPI event loop.
 4. **Normalized Error Handling:** All vendor-specific errors are mapped to `LLMError` with standard `LLMErrorType` categories.
-5. **Dynamic Extensibility:** New providers can be registered at runtime via `ProviderRegistry.register("provider_id", CustomProviderClass)`.
+5. **Ordered Provider Failover:** `LLMService` tries the primary provider first, then configured fallback providers for recoverable provider errors. Invalid requests do not trigger repeated calls.
+6. **Provider-Specific Models:** `AI_MODEL` controls the primary provider; `AI_MODEL_<PROVIDER>` may override the default model for a provider used as a fallback.
+7. **Dynamic Extensibility:** New providers can be registered at runtime via `ProviderRegistry.register("provider_id", CustomProviderClass)`.
 
 ---
 
@@ -109,6 +111,11 @@ messages = template.to_messages({
 # Active provider: openai, deepseek, openrouter, kimi, ollama, fake
 AI_PROVIDER=deepseek
 AI_MODEL=deepseek-chat
+# Order matters; the primary provider is automatically excluded from this list.
+AI_FALLBACK_PROVIDERS=openai,openrouter,groq,kimi,huggingface
+# Optional per-provider model overrides used when a provider is a fallback:
+# AI_MODEL_OPENAI=gpt-4o
+# AI_MODEL_OPENROUTER=deepseek/deepseek-r1
 
 # Credentials
 DEEPSEEK_API_KEY=sk-...
@@ -119,6 +126,23 @@ KIMI_API_KEY=sk-...
 
 ---
 
+## 🔁 Provider Failover (Current Non-Streaming Path)
+
+- `AI_PROVIDER` selects the primary provider.
+- `AI_FALLBACK_PROVIDERS` is an ordered, comma-separated list tried after the primary. The primary is automatically removed from the fallback sequence, and duplicate IDs are ignored.
+- Providers without required credentials are skipped. The default list includes hosted providers; add `ollama` only when Ollama is reachable from the Backend container.
+- Authentication failures, rate limits, unavailable models, timeouts, provider errors, and unexpected errors can trigger failover. `INVALID_REQUEST` does not trigger failover because retrying the same invalid payload is unlikely to help.
+- `AI_MODEL` configures the primary model. `AI_MODEL_OPENAI`, `AI_MODEL_DEEPSEEK`, `AI_MODEL_OPENROUTER`, `AI_MODEL_KIMI`, `AI_MODEL_GROQ`, `AI_MODEL_HUGGINGFACE`, and `AI_MODEL_OLLAMA` optionally override each provider's model when used as a fallback.
+- This first stage retries the whole request because the Python provider currently uses non-streaming responses. It does **not** resume a partially generated answer. Streaming and text-continuation require a separate implementation stage.
+
+Example:
+
+```env
+AI_PROVIDER=openai
+AI_MODEL=gpt-4o
+AI_FALLBACK_PROVIDERS=deepseek,openrouter,groq,kimi,huggingface
+```
+
 ## 🧪 Testing
 
 Run all unit tests with `pytest`:
@@ -127,4 +151,4 @@ Run all unit tests with `pytest`:
 python3 -m pytest ai/tests -v
 ```
 
-All 54 tests run locally with zero cost and no external API keys required.
+The AI unit tests run with zero cost and no external API keys required. The failover behavior is tested with fake providers; live-provider health and streaming continuation require separate integration tests.

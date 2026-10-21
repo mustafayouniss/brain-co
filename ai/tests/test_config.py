@@ -55,3 +55,39 @@ def test_ai_config_create_service():
     service = config.create_service()
     assert isinstance(service, LLMService)
     assert service.get_provider().get_provider_id() == "fake"
+
+
+def test_ai_config_creates_fallback_providers_in_configured_order():
+    config = AIConfig(
+        AI_PROVIDER="openai",
+        AI_MODEL="gpt-4o",
+        AI_FALLBACK_PROVIDERS="deepseek,openrouter,openai,deepseek",
+        OPENAI_API_KEY="sk-openai",
+        DEEPSEEK_API_KEY="sk-deepseek",
+        OPENROUTER_API_KEY="sk-openrouter",
+    )
+
+    service = config.create_service()
+
+    assert service.get_provider().get_provider_id() == "openai"
+    assert [p.get_provider_id() for p in service.get_fallback_providers()] == [
+        "deepseek", "openrouter"
+    ]
+
+
+def test_ai_config_uses_provider_specific_model_for_fallback():
+    config = AIConfig(
+        AI_PROVIDER="openai",
+        AI_MODEL="gpt-4o-mini",
+        AI_FALLBACK_PROVIDERS="deepseek",
+        OPENAI_API_KEY="sk-openai",
+        DEEPSEEK_API_KEY="sk-deepseek",
+        AI_MODEL_DEEPSEEK="deepseek-reasoner",
+    )
+
+    service = config.create_service()
+    primary = service.get_provider()
+    fallback = service.get_fallback_providers()[0]
+
+    assert primary._default_model == "gpt-4o-mini"
+    assert fallback._default_model == "deepseek-reasoner"
