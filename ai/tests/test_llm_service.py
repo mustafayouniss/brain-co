@@ -126,3 +126,117 @@ def test_set_provider_should_replace_provider_and_log_event():
     change_event = next((e for e in logger.info_events if e.get("event") == "llm_provider_changed"), None)
     assert change_event is not None
     assert change_event["newProvider"] == "fake"
+
+
+class NamedFakeProvider(FakeLLMProvider):
+    """Fake provider with a distinct ID so failover order is observable in tests."""
+
+    def __init__(self, provider_id: str, **kwargs: Any):
+        super().__init__(**kwargs)
+        self._provider_id = provider_id
+
+
+def test_should_fallback_to_next_provider_after_authentication_failure():
+    primary_error = LLMError(
+        LLMErrorType.AUTHENTICATION_FAILED,
+        "Invalid API key",
+        "primary",
+    )
+    primary = NamedFakeProvider("primary", forced_error=primary_error)
+    fallback = NamedFakeProvider("fallback", custom_response="Fallback answer")
+    logger = MockLogger()
+    service = LLMService(
+        provider=primary,
+        fallback_providers=[fallback],
+        logger=logger,
+    )
+    request = LLMRequest(
+        messages=[LLMMessage(role="user", content="Continue my task")],
+        model="",
+    )
+
+    response = asyncio.run(service.generate(request))
+
+    assert response.content == "Fallback answer"
+    assert len(primary.recorded_requests) == 1
+    assert len(fallback.recorded_requests) == 1
+    assert fallback.recorded_requests[0].messages == request.messages
+    assert fallback.recorded_requests[0].model == request.model
+    fallback_event = next(
+        event for event in logger.warning_events
+        if event.get("event") == "llm_fallback_started"
+    )
+    assert fallback_event["failedProvider"] == "primary"
+    assert fallback_event["nextProvider"] == "fallback"
+    completed = next(
+        event for event in logger.info_events
+        if event.get("event") == "llm_request_completed"
+    )
+    assert completed["provider"] == "fallback"
+    assert completed["fallbackUsed"] is True
+
+
+def test_should_not_fallback_for_invalid_request_error():
+    primary_error = LLMError(
+        LLMErrorType.INVALID_REQUEST,
+        "Request payload is invalid",
+        "primary",
+    )
+    primary = NamedFakeProvider("primary", forced_error=primary_error)
+    fallback = NamedFakeProvider("fallback", custom_response="Should not run")
+    service = LLMService(provider=primary, fallback_providers=[fallback])
+    request = LLMRequest(
+        messages=[LLMMessage(role="user", content="Hello")],
+        model="",
+    )
+
+    with pytest.raises(LLMError) as exc_info:
+        asyncio.run(service.generate(request))
+
+    assert exc_info.value.error_type == LLMErrorType.INVALID_REQUEST
+    assert len(fallback.recorded_requests) == 0
+
+
+def test_should_skip_unavailable_fallback_and_try_next_configured_provider():
+    primary = NamedFakeProvider(
+        "primary",
+        forced_error=LLMError(LLMErrorType.TIMEOUT, "Timed out", "primary"),
+    )
+    unavailable = NamedFakeProvider("unavailable", available=False)
+    fallback = NamedFakeProvider("fallback", custom_response="Recovered")
+    service = LLMService(
+        provider=primary,
+        fallback_providers=[unavailable, fallback],
+    )
+    request = LLMRequest(
+        messages=[LLMMessage(role="user", content="Hello")],
+        model="",
+    )
+
+    response = asyncio.run(service.generate(request))
+
+    assert response.content == "Recovered"
+    assert len(unavailable.recorded_requests) == 0
+    assert len(fallback.recorded_requests) == 1
+
+
+def test_should_raise_last_provider_error_when_all_providers_fail():
+    primary = NamedFakeProvider(
+        "primary",
+        forced_error=LLMError(LLMErrorType.TIMEOUT, "Primary timed out", "primary"),
+    )
+    fallback = NamedFakeProvider(
+        "fallback",
+        forced_error=LLMError(LLMErrorType.PROVIDER_ERROR, "Fallback failed", "fallback"),
+    )
+    service = LLMService(provider=primary, fallback_providers=[fallback])
+    request = LLMRequest(
+        messages=[LLMMessage(role="user", content="Hello")],
+        model="",
+    )
+
+    with pytest.raises(LLMError) as exc_info:
+        asyncio.run(service.generate(request))
+
+    assert exc_info.value.error_type == LLMErrorType.PROVIDER_ERROR
+    assert "Fallback failed" in exc_info.value.message
