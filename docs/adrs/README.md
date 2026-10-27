@@ -9,3 +9,5 @@
 - **ADR-005**: فرض المراجعة البشرية الإلزامية لترقية المعرفة (Human-in-the-Loop Validation Gate).
 - **ADR-006**: اعتماد معمارية العمل بدون إنترنت لتطبيق الموبايل (Flutter Offline-First Sync with Hive/Isar).
 - **ADR-007**: فصل الاستقبال الفوري للرسائل عن الاستدلال البطيء (Observation Buffering with Redis/Kafka).
+- **ADR-008**: اعتماد محرك التخطيط كالمحرك السادس في الحلقة الأولى (Ring 1 Planning Engine).
+

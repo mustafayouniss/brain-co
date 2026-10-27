@@ -74,7 +74,15 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
 - Purpose: Prepared as an infrastructure service to support knowledge graph exploration, citation networks, and multi-hop relationship reasoning in higher rings.
 - Invariant: Ring 0 and Foundational Ingestion remain purely on PostgreSQL + pgvector; backend core transactions and Source Memory remain independent of Neo4j.
 
+## D-016 — Ring 1 General Brain Peer-to-Peer Mesh Architecture & 6th Engine (Planning) (2026-10-27)
+- Six engines cooperating peer-to-peer via `MeshRouter` (`backend/app/ring1/`): Perception, Observation, Context, Basic Memory, Basic Retrieval, and Planning.
+- In-process capability dispatch with versioned envelopes (`MeshRequest`, `MeshResponse`).
+- Planning Engine approved as 6th engine (documented in ADR-008, Constitution unchanged).
+- Strict case-level isolation enforced across Context, Memory, and Retrieval (`case_id` boundary).
+- Database persistence via SQLAlchemy models (`ring1_observations`, `ring1_memory_records`) with Alembic migration `f19a0a1b2c3d`.
+
 ---
+
 
 ## Open questions (do not assume an answer)
 

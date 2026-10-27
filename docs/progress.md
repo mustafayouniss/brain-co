@@ -91,10 +91,20 @@
   - Added `LEGAL_SYSTEM_PROMPT` to `backend/app/api/v1/ai.py` and supported `context: "legal"` in `PromptRequest`.
   - Integrated `frontend/src/components/workspace/workspace-client.tsx` to request legal context.
   - Full test suite passes: 124 backend + 24 data-engineering + 15 AI integration (163 passing tests).
-  - Frontend typecheck and production build pass with 0 errors.
-  - Successfully pushed clean history to `origin/main` (`af5e902d..952eca52`).
+- **Implemented Ring 1 General Brain Peer-to-Peer Mesh Architecture (2026-10-27)**:
+  - Six engines cooperating peer-to-peer: Perception, Observation, Context, Basic Memory, Basic Retrieval, and Planning.
+  - Implemented versioned mesh envelopes (`MeshRequest`, `MeshResponse`) with delegation constraints, trace IDs, task IDs, and typed error handling.
+  - Built `CapabilityRegistry` with capability allowlist validation and `MeshRouter` with timeout protection and delegation depth bounding.
+  - Designed SQLAlchemy models `Observation` and `MemoryRecord` in `ring1.models.observation` with Alembic migration `f19a0a1b2c3d`.
+  - Enforced strict case-level context isolation across Context, Memory, and Retrieval.
+  - Authored ADR-008 (`docs/adrs/ADR-008-planning-engine.md`) documenting Planning Engine as approved 6th engine.
+  - Authored 34 dedicated unit and integration tests in `backend/tests/ring1/` (100% passing).
+  - Full test suite passes: 212 tests across backend and AI packages (0 failures).
 
 ## Next
+- Wire Ring 1 mesh capabilities to API endpoints and WebSocket event streams.
+- Address frontend dependency vulnerabilities (npm audit fix --force).
+
 - User action required: revoke exposed OpenRouter API key in provider dashboard and issue replacement.
 - Address frontend dependency vulnerabilities (npm audit fix --force).
 

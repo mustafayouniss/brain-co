@@ -33,8 +33,17 @@
 - [x] **T8** — Authorization dependencies: `get_current_user`, `require_admin`, admin-only sample endpoint implemented and tested (2026-10-13).
 - [x] **T9** — First admin: seed command `backend/app/scripts/create_admin.py` implemented and tested (2026-10-13).
 - [x] **T10** — API contract: `docs/backend/api/auth.md` created with complete endpoint specifications (2026-10-13).
+- [x] **RING1-0** — Ring 1 General Brain Peer-to-Peer Mesh Architecture (2026-10-27):
+  - Six peer engines (`backend/app/ring1/engines/`): Perception, Observation, Context, Basic Memory, Basic Retrieval, Planning.
+  - Mesh contracts (`backend/app/ring1/contracts/`): `MeshRequest`, `MeshResponse`, `ContextRef`, `EngineErrorCode`, `Plan`, `PlanStep`, `ReplanRequest`, `ReplanResponse`.
+  - In-process `MeshRouter` (`backend/app/ring1/mesh/router.py`) with capability allowlist validation, timeout bounding, and delegation depth controls.
+  - SQLAlchemy models (`ring1_observations`, `ring1_memory_records`) with Alembic migration `f19a0a1b2c3d_create_ring1_tables.py`.
+  - Strict case-level context isolation and defense-in-depth across storage and retrieval.
+  - ADR-008 (`docs/adrs/ADR-008-planning-engine.md`) approved Planning Engine as 6th engine.
+  - 34 passing tests in `backend/tests/ring1/` (212 total suite passing).
 
-## What's Next (Ring 0 — remaining tasks, in order)
+## What's Next
+
 - [ ] **T11** — CI: GitHub Actions. *(Only after OPEN-7 is decided.)*
 
 ## Integration Notes (2026-10-13)

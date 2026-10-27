@@ -139,3 +139,19 @@ cd backend
 - **What it does**: Starts the local FastAPI development server on port 8000.
 - **When to use**: When testing API endpoints locally. You can visit `http://127.0.0.1:8000/health` or `http://127.0.0.1:8000/api/v1/health/db` in your browser or client tool.
 
+---
+
+## 3. Ring 1 General Brain Mesh: How It Works
+
+### The Analogy: A Team of Specialists Without a Dictator Boss
+Imagine a legal operations room with 6 specialists sitting at a round table:
+1. **Perception Specialist**: Takes in raw letters, emails, or system pings, reads them, and translates them into organized summary folders.
+2. **Observation Specialist**: Notes when events happen, files them neatly, detects if an event was already logged, and decides whether it needs follow-up work.
+3. **Context Specialist**: Checks which legal case and organization an action belongs to. If someone brings a document without a case number, they stop and ask for clarification rather than guessing.
+4. **Memory Specialist**: Keeps the confidential file cabinets. When someone wants to save or read a record, they verify that the person is asking for files inside the correct case cabinet.
+5. **Retrieval Specialist**: Answers questions by searching through the memory cabinets, strictly making sure they never pull a file from Case A when answering a question about Case B.
+6. **Planning Specialist**: Breaks down big objectives into a sequenced checklist of steps using the tools that the other specialists provide, and if a step fails, boundedly revises the checklist without looping forever.
+
+### The Mesh Router (The Courier)
+Instead of having a single monolithic "boss" that controls every micro-action, all specialists communicate through a lightweight courier called the **Mesh Router**. Every message travels in a secure envelope (`MeshRequest` / `MeshResponse`) that carries the task ID, trace ID, context boundaries, and a delegation countdown so loops are mathematically impossible.
+

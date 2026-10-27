@@ -1,0 +1,282 @@
+"""Observation Engine — background event capture and observation service.
+
+Deterministic Core:
+- Capture and normalize events
+- Record observations with metadata and trace info
+- Duplicate detection via idempotency key
+- Explicit event policies for record-only vs follow-up
+
+Intelligence Layer:
+- Determine whether an unfamiliar event requires follow-up (when no explicit rule exists)
+
+Must not: become the central orchestrator, start arbitrary workflows,
+treat raw observations as trusted knowledge, bypass context/authorization.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from sqlalchemy.orm import Session
+
+from app.ring1.contracts.capabilities import (
+    OBSERVATION_RECORD_EVENT,
+    PLANNING_CREATE_PLAN,
+    CapabilityRegistry,
+)
+from app.ring1.contracts.envelopes import MeshRequest, MeshResponse, ResultStatus
+from app.ring1.contracts.errors import EngineErrorCode
+from app.ring1.engines.base import BaseEngine
+from app.ring1.models.observation import Observation
+
+
+# Default event types that are record-only (no follow-up)
+_RECORD_ONLY_EVENT_TYPES: frozenset[str] = frozenset({
+    "heartbeat",
+    "metric",
+    "log_entry",
+    "status_check",
+    "audit_entry",
+})
+
+# Event types that explicitly trigger follow-up work
+_FOLLOW_UP_EVENT_TYPES: frozenset[str] = frozenset({
+    "document.uploaded",
+    "case.created",
+    "message.received",
+    "task.requested",
+})
+
+
+class ObservationEngine(BaseEngine):
+    """Ring 1 Observation Engine [GB].
+
+    Records system events, user actions, and external triggers as normalized
+    observations. Determines whether each event is record-only or eligible
+    for follow-up through explicit event policies.
+    """
+
+    def __init__(self, db_session_factory=None, **kwargs):
+        """Initialize with an optional database session factory.
+
+        Args:
+            db_session_factory: Callable returning a SQLAlchemy Session.
+                When provided, observations are persisted to the database.
+                When None, observations are recorded in-memory (for testing
+                or when DB is not yet available).
+        """
+        super().__init__(**kwargs)
+        self._db_session_factory = db_session_factory
+        self._in_memory_observations: list[dict[str, Any]] = []
+
+    @property
+    def engine_name(self) -> str:
+        return "observation"
+
+    def register_capabilities(self, registry: CapabilityRegistry) -> None:
+        registry.register(
+            OBSERVATION_RECORD_EVENT,
+            self.engine_name,
+            self.handle_record_event,
+            description="Capture, normalize, and persist an event observation.",
+        )
+
+    # -----------------------------------------------------------------
+    # Capability handler
+    # -----------------------------------------------------------------
+
+    async def handle_record_event(self, request: MeshRequest) -> MeshResponse:
+        """Record an event as a normalized observation.
+
+        Decision order:
+        1. Validate request
+        2. Normalize event payload
+        3. Check for duplicates (idempotency)
+        4. Persist the observation
+        5. Determine if follow-up is needed
+        6. Return typed result with observation ID and follow-up status
+        """
+        # Step 1: Validate
+        validation_err = self.validate_request(request)
+        if validation_err:
+            return validation_err
+
+        payload = request.payload
+        event_id = payload.get("event_id") or f"evt-{uuid.uuid4().hex[:12]}"
+        event_type = payload.get("event_type", "")
+
+        if not event_type:
+            return self._error(
+                request,
+                ResultStatus.INVALID_REQUEST,
+                EngineErrorCode.INVALID_PAYLOAD,
+                "'event_type' is required in the payload.",
+            )
+
+        # Step 2: Normalize
+        normalized = self._normalize_event(payload, event_id)
+
+        # Step 3: Duplicate check
+        idempotency_key = payload.get("idempotency_key") or event_id
+        duplicate = await self._check_duplicate(idempotency_key, request)
+        if duplicate is not None:
+            return duplicate
+
+        # Step 4: Persist
+        observation_id = await self._persist_observation(
+            normalized, request, idempotency_key
+        )
+
+        # Step 5: Determine follow-up
+        requires_follow_up = self._should_follow_up(event_type)
+
+        # Step 6: Return result
+        return self._success(request, {
+            "observation_id": observation_id,
+            "event_id": event_id,
+            "event_type": event_type,
+            "source": normalized.get("source", "unknown"),
+            "timestamp": normalized["timestamp"],
+            "context_ref": request.context_ref,
+            "status": "recorded",
+            "duplicate": False,
+            "trace_id": request.trace_id,
+            "requires_follow_up": requires_follow_up,
+            "follow_up_required": requires_follow_up,
+            "follow_up_capability": PLANNING_CREATE_PLAN if requires_follow_up else None,
+        })
+
+
+    # -----------------------------------------------------------------
+    # Deterministic core
+    # -----------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_event(
+        payload: dict[str, Any], event_id: str
+    ) -> dict[str, Any]:
+        """Normalize an event payload into a standard structure."""
+        return {
+            "event_id": event_id,
+            "event_type": payload.get("event_type", "unknown"),
+            "source": payload.get("source", "unknown"),
+            "timestamp": payload.get(
+                "timestamp",
+                datetime.now(timezone.utc).isoformat(),
+            ),
+            "actor_ref": payload.get("actor_ref"),
+            "payload": payload.get("payload", {}),
+            "metadata": payload.get("metadata", {}),
+        }
+
+    async def _check_duplicate(
+        self,
+        idempotency_key: str,
+        request: MeshRequest,
+    ) -> Optional[MeshResponse]:
+        """Check for duplicate observations using the idempotency key.
+
+        Returns a duplicate-status response if found, None otherwise.
+        """
+        if self._db_session_factory:
+            session: Session = self._db_session_factory()
+            try:
+                existing = (
+                    session.query(Observation)
+                    .filter(Observation.idempotency_key == idempotency_key)
+                    .first()
+                )
+                if existing:
+                    return self._success(request, {
+                        "observation_id": str(existing.id),
+                        "event_id": existing.event_id,
+                        "event_type": existing.event_type,
+                        "status": "duplicate",
+                        "duplicate": True,
+                        "trace_id": request.trace_id,
+                        "requires_follow_up": False,
+                        "follow_up_required": False,
+                    })
+            finally:
+                session.close()
+        else:
+            # In-memory duplicate check
+            for obs in self._in_memory_observations:
+                if obs.get("idempotency_key") == idempotency_key:
+                    return self._success(request, {
+                        "observation_id": obs.get("observation_id", ""),
+                        "event_id": obs.get("event_id", ""),
+                        "event_type": obs.get("event_type", ""),
+                        "status": "duplicate",
+                        "duplicate": True,
+                        "trace_id": request.trace_id,
+                        "requires_follow_up": False,
+                        "follow_up_required": False,
+                    })
+        return None
+
+
+    async def _persist_observation(
+        self,
+        normalized: dict[str, Any],
+        request: MeshRequest,
+        idempotency_key: str,
+    ) -> str:
+        """Persist the observation to the database or in-memory store."""
+        observation_id = str(uuid.uuid4())
+
+        if self._db_session_factory:
+            session: Session = self._db_session_factory()
+            try:
+                obs = Observation(
+                    event_id=normalized["event_id"],
+                    event_type=normalized["event_type"],
+                    source=normalized["source"],
+                    actor_ref=normalized.get("actor_ref"),
+                    context_ref=request.context_ref,
+                    case_id=request.payload.get("case_id"),
+                    organization_id=request.payload.get("organization_id"),
+                    payload=normalized.get("payload"),
+                    metadata_=normalized.get("metadata"),
+                    trace_id=request.trace_id,
+                    task_id=request.task_id,
+                    idempotency_key=idempotency_key,
+                    event_timestamp=datetime.fromisoformat(normalized["timestamp"])
+                    if normalized.get("timestamp")
+                    else None,
+                )
+                session.add(obs)
+                session.commit()
+                observation_id = str(obs.id)
+            except Exception as exc:
+                session.rollback()
+                self._logger.error("Failed to persist observation: %s", str(exc))
+                raise
+            finally:
+                session.close()
+        else:
+            self._in_memory_observations.append({
+                "observation_id": observation_id,
+                "idempotency_key": idempotency_key,
+                **normalized,
+            })
+
+        return observation_id
+
+    @staticmethod
+    def _should_follow_up(event_type: str) -> bool:
+        """Determine whether an event requires follow-up work.
+
+        Uses explicit event type policies:
+        - Record-only types → no follow-up
+        - Follow-up types → trigger planning
+        - Unknown types → record only (safe default)
+        """
+        if event_type in _RECORD_ONLY_EVENT_TYPES:
+            return False
+        if event_type in _FOLLOW_UP_EVENT_TYPES:
+            return True
+        # Unknown event types default to record-only (safe)
+        return False
