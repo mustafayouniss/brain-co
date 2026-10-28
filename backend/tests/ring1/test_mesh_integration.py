@@ -101,3 +101,111 @@ async def test_mesh_delegation_depth_exhaustion(ring1_mesh):
     resp = await router.dispatch(req)
     assert resp.status == ResultStatus.FAILED
     assert resp.errors[0].code == EngineErrorCode.DELEGATION_DEPTH_EXCEEDED.value
+
+
+@pytest.mark.asyncio
+async def test_engine_initiated_delegation_observation_to_planning(ring1_mesh):
+    """ObservationEngine autonomously initiates delegation to PlanningEngine when follow-up is required."""
+    router = ring1_mesh["router"]
+    ctx = ContextRef(
+        organization_id="org-acme",
+        case_id="case-42",
+        status=ResolutionStatus.EXPLICIT,
+    )
+    req = MeshRequest(
+        sender_engine="external_webhook",
+        recipient_capability=OBSERVATION_RECORD_EVENT,
+        context_ref=ctx,
+        payload={
+            "event_type": "document.uploaded",
+            "source": "court_notifier",
+            "payload": {"deadline_days": 3, "filing": "motion_to_dismiss"},
+        },
+    )
+
+    # Dispatch to ObservationEngine; Observation internally invokes planning.create_plan
+    resp = await router.dispatch(req)
+    assert resp.status == ResultStatus.SUCCESS
+    assert resp.sender_engine == "observation"
+    assert resp.payload["requires_follow_up"] is True
+
+    # Verify that the recipient capability was genuinely invoked and affected the caller's result
+    delegated = resp.payload.get("delegated_result")
+    assert delegated is not None, "ObservationEngine failed to initiate genuine delegation"
+    assert delegated["capability"] == PLANNING_CREATE_PLAN
+    assert delegated["status"] == ResultStatus.SUCCESS.value
+    assert "plan_id" in delegated["payload"]
+    assert len(delegated["payload"]["steps"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_engine_initiated_delegation_perception_to_observation(ring1_mesh):
+    """PerceptionEngine autonomously initiates delegation to ObservationEngine when record_observation=True."""
+    router = ring1_mesh["router"]
+    ctx = ContextRef(
+        organization_id="org-acme",
+        case_id="case-42",
+        status=ResolutionStatus.EXPLICIT,
+    )
+    req = MeshRequest(
+        sender_engine="client",
+        recipient_capability=PERCEPTION_STRUCTURE_INPUT,
+        context_ref=ctx,
+        payload={
+            "raw_content": '{"event": "statute_amendment", "section": "Article 14"}',
+            "input_type": "json",
+            "record_observation": True,
+        },
+    )
+
+    resp = await router.dispatch(req)
+    assert resp.status == ResultStatus.SUCCESS
+    assert resp.sender_engine == "perception"
+
+    delegated_obs = resp.payload.get("delegated_observation")
+    assert delegated_obs is not None
+    assert delegated_obs["status"] == ResultStatus.SUCCESS.value
+    assert "observation_id" in delegated_obs["payload"]
+
+
+@pytest.mark.asyncio
+async def test_delegation_irrelevant_engines_skipped(ring1_mesh):
+    """When an event does not require follow-up, delegation is skipped entirely."""
+    router = ring1_mesh["router"]
+    req = MeshRequest(
+        sender_engine="client",
+        recipient_capability=OBSERVATION_RECORD_EVENT,
+        payload={
+            "event_type": "heartbeat",
+            "source": "cron",
+            "payload": {"alive": True},
+        },
+    )
+    resp = await router.dispatch(req)
+    assert resp.status == ResultStatus.SUCCESS
+    assert resp.payload["requires_follow_up"] is False
+    assert "delegated_result" not in resp.payload
+
+
+@pytest.mark.asyncio
+async def test_delegation_downstream_failure_propagation(ring1_mesh):
+    """Downstream delegation failure propagates cleanly to the caller without unhandled exceptions."""
+    router = ring1_mesh["router"]
+    req = MeshRequest(
+        sender_engine="client",
+        recipient_capability=OBSERVATION_RECORD_EVENT,
+        payload={
+            "event_type": "document.uploaded",
+            "source": "test",
+            "payload": {"data": "test"},
+            "follow_up_capability": "unknown.fake_capability",  # deliberately invalid capability
+            "auto_delegate": True,
+        },
+    )
+    resp = await router.dispatch(req)
+    assert resp.status == ResultStatus.SUCCESS
+    assert resp.payload["requires_follow_up"] is True
+    delegated = resp.payload.get("delegated_result")
+    assert delegated is not None
+    assert delegated["status"] == ResultStatus.FAILED.value
+    assert delegated["errors"][0]["code"] == EngineErrorCode.CAPABILITY_NOT_FOUND.value

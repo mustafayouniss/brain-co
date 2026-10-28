@@ -206,21 +206,29 @@ class PlanningEngine(BaseEngine):
         plan.version += 1
         plan.replan_count += 1
 
-        # Mark failed step
+        # Extract execution evidence and actual result from failed step
+        actual_result = request.payload.get("actual_result")
+        evidence = request.payload.get("evidence") or {}
+
+        # Mark superseded failed step and track retained completed steps
         retained_step_ids = []
+        skipped_step_ids = []
         for step in plan.steps:
             if step.step_id == failed_step_id:
-                step.status = StepStatus.FAILED
-                step.actual_result = request.payload.get("actual_result")
+                step.status = StepStatus.SKIPPED
+                step.actual_result = actual_result
+                skipped_step_ids.append(step.step_id)
             elif step.status == StepStatus.COMPLETED:
                 retained_step_ids.append(step.step_id)
 
-        # Generate recovery steps
+        # Generate evidence-based recovery steps
         recovery_steps = self._build_recovery_steps(
             plan=plan,
             failed_step_id=failed_step_id,
             reason_code=reason_code,
             suggested=request.payload.get("suggested_capabilities", []),
+            actual_result=actual_result,
+            evidence=evidence,
         )
 
         # Append recovery steps to plan
@@ -234,7 +242,7 @@ class PlanningEngine(BaseEngine):
             new_version=plan.version,
             reason=f"Replan triggered by {reason_code.value} on step {failed_step_id}",
             steps_retained=retained_step_ids,
-            steps_skipped=[],
+            steps_skipped=skipped_step_ids,
             steps_added=recovery_steps,
             resume_step_id=recovery_steps[0].step_id if recovery_steps else None,
             is_terminal=False,
@@ -364,40 +372,111 @@ class PlanningEngine(BaseEngine):
         failed_step_id: str,
         reason_code: ReplanReasonCode,
         suggested: list[str],
+        actual_result: Optional[dict[str, Any]] = None,
+        evidence: Optional[dict[str, Any]] = None,
     ) -> list[PlanStep]:
-        """Build deterministic recovery steps based on failure reason."""
-        # Use valid suggested capabilities if provided
-        filtered_suggestions = [c for c in suggested if c in ALL_CAPABILITIES]
+        """Build evidence-based recovery steps based on real execution failure details.
+
+        Preserves successfully completed work.
+        Avoids infinite retries of the exact same failing capability.
+        Uses actual_result and failure evidence to select appropriate recovery path.
+        """
+        evidence = evidence or {}
+        actual_result = actual_result or {}
+
+        # Find failed step
+        failed_step = next((s for s in plan.steps if s.step_id == failed_step_id), None)
+        failed_cap = failed_step.capability if failed_step else None
+
+        # Check for repeated failures of the exact same capability
+        previously_failed_caps = [
+            s.capability for s in plan.steps if s.status == StepStatus.FAILED and s.step_id != failed_step_id
+        ]
+        if failed_cap and failed_cap in previously_failed_caps:
+            # Repeating failure detected — avoid repeating indefinitely
+            # Fall back to operator clarification
+            return [
+                PlanStep(
+                    order=1,
+                    capability=CONTEXT_RESOLVE,
+                    description=f"Persistent failure in '{failed_cap}'. Request operator clarification.",
+                    expected_output="Operator resolved context constraints.",
+                    status=StepStatus.PENDING,
+                )
+            ]
+
+        # Use valid suggested capabilities if provided and applicable
+        filtered_suggestions = [c for c in suggested if c in ALL_CAPABILITIES and c != failed_cap]
         if filtered_suggestions:
             return [
                 PlanStep(
                     order=1,
                     capability=cap,
-                    description=f"Alternative step recovering from {reason_code.value}",
+                    description=f"Alternative capability '{cap}' recovering from {reason_code.value} on {failed_cap or 'step'}.",
                     expected_output=f"Output from fallback capability {cap}",
                     status=StepStatus.PENDING,
                 )
                 for cap in filtered_suggestions
             ]
 
+        # Evidence-based recovery by reason code
         if reason_code == ReplanReasonCode.CONTEXT_INSUFFICIENT:
+            missing_attrs = evidence.get("missing_attributes") or ["case_id"]
+            desc = f"Resolve missing context boundaries ({', '.join(missing_attrs)}) following failure in {failed_cap or 'step'}."
             return [
                 PlanStep(
                     order=1,
                     capability=CONTEXT_RESOLVE,
-                    description="Re-resolve context with updated inputs.",
-                    expected_output="Fully resolved ContextRef.",
+                    description=desc,
+                    expected_output="Fully resolved ContextRef with mandatory case_id.",
                     status=StepStatus.PENDING,
                 )
             ]
 
-        # Default recovery: attempt context retrieval or perception refresh
+        if reason_code == ReplanReasonCode.AUTHORIZATION_DENIED:
+            return [
+                PlanStep(
+                    order=1,
+                    capability=CONTEXT_RESOLVE,
+                    description=f"Re-authenticate and verify case boundaries for unauthorized step {failed_step_id}.",
+                    expected_output="Verified authorization context.",
+                    status=StepStatus.PENDING,
+                )
+            ]
+
+        if reason_code == ReplanReasonCode.CAPABILITY_FAILED:
+            # Tailor recovery to what capability actually failed
+            if failed_cap == RETRIEVAL_QUERY:
+                # If retrieval failed, restructure search query via perception or resolve broader context
+                return [
+                    PlanStep(
+                        order=1,
+                        capability=PERCEPTION_STRUCTURE_INPUT,
+                        description="Restructure search query for alternative retrieval.",
+                        expected_output="Normalized search query representation.",
+                        status=StepStatus.PENDING,
+                    )
+                ]
+            elif failed_cap == PERCEPTION_STRUCTURE_INPUT:
+                # If perception failed, query prior documents
+                return [
+                    PlanStep(
+                        order=1,
+                        capability=RETRIEVAL_QUERY,
+                        description="Query prior parsed documents from case memory.",
+                        expected_output="Previously stored structured documents.",
+                        status=StepStatus.PENDING,
+                    )
+                ]
+
+        # Default recovery
+        recovery_cap = RETRIEVAL_QUERY if failed_cap != RETRIEVAL_QUERY else CONTEXT_RESOLVE
         return [
             PlanStep(
                 order=1,
-                capability=RETRIEVAL_QUERY,
-                description=f"Retrieve supplementary context after step {failed_step_id} failure.",
-                expected_output="Supplementary context records.",
+                capability=recovery_cap,
+                description=f"Evidence-based recovery step using {recovery_cap} after {failed_step_id} failure.",
+                expected_output=f"Recovery data from {recovery_cap}.",
                 status=StepStatus.PENDING,
             )
         ]

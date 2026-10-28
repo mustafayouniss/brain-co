@@ -101,12 +101,56 @@
   - Authored 34 dedicated unit and integration tests in `backend/tests/ring1/` (100% passing).
   - Full test suite passes: 212 tests across backend and AI packages (0 failures).
 
-## Next
-- Wire Ring 1 mesh capabilities to API endpoints and WebSocket event streams.
-- Address frontend dependency vulnerabilities (npm audit fix --force).
+- **Manual End-to-End Integration Testing of the Six Ring 1 Engines (2026-10-27)**:
+  - Authored comprehensive end-to-end integration test in `backend/tests/ring1/test_e2e_mesh_integration.py` exercising all 6 engines cooperating peer-to-peer over `MeshRouter.dispatch()`.
+  - Verified full realistic legal workflow: raw input parsing (Perception), scope boundary resolution with negative ambiguity checks (Context), idempotent event recording and deduplication in PostgreSQL (Observation), context-scoped fact storage (Basic Memory), cross-case data isolation and access refusal (Basic Retrieval), and plan creation, step state preservation, forced failure on `CONTEXT_INSUFFICIENT`, and bounded replanning (Planning Engine v1 -> v2).
+  - Fixed `ContextRef` adaptation issue in `ObservationEngine._persist_observation`.
+  - Authored comprehensive 12-section manual integration report in `docs/rings/ring1-manual-integration-test-report.md`.
+  - All 35 Ring 1 tests pass (`backend/tests/ring1/`).
+  - Full test suite passes: 213 tests across backend and AI packages (0 failures).
 
-- User action required: revoke exposed OpenRouter API key in provider dashboard and issue replacement.
-- Address frontend dependency vulnerabilities (npm audit fix --force).
+- **GUI-Based Ring 1 Live Integration Test Console (2026-10-28)**:
+  - Built interactive floating developer console in the Next.js frontend (`Ring 1 Live Test`) positioned at bottom-left without interfering with normal navigation or the bottom-right AI assistant widget.
+  - Implemented backend test runner service and in-memory registry in `backend/app/ring1/service.py`.
+  - Implemented SSE streaming & REST API endpoints in `backend/app/api/v1/ring1.py` with `get_test_operator_user` security guard in `backend/app/api/deps.py`.
+  - Implemented Next.js proxy API routes in `frontend/src/app/api/ring1/` streaming Server-Sent Events to the browser.
+  - Built 5 dedicated UI tabs: Live Trace, Delegation Graph (SVG with real-time dynamic edges), Plan Versions (v1 vs v2 comparison with step retention proof), Event Details (MeshRequest/MeshResponse JSON inspector), and Test Summary scorecard.
+  - Authored 7 integration tests in `backend/tests/test_api_v1_ring1.py`.
+  - All 42 Ring 1 tests pass (35 mesh tests + 7 API tests).
+  - Full backend test suite passes: 220 tests across backend and AI packages (0 failures).
+  - Frontend typecheck and production build pass cleanly (30 routes compiled).
+- **Ring 1 Security Remediation & Genuine Execution Implementation (Phases 1-7) — 2026-10-28**:
+  - **P0 Security Remediation**:
+    - Fixed unscoped memory GET vulnerability in `BasicMemoryEngine.handle_get_record`: enforced `self.require_context_ref()`, strict `case_id` & `organization_id` matching, payload spoofing protection, and error message sanitization.
+    - Added 6 security regression tests in `backend/tests/ring1/test_memory.py` (10/10 memory tests pass).
+    - Redacted exposed Gemini API key from `docs/rings/ring1-master-comprehensive-report.md`. Verified 0 secret leaks in git history and tracked files.
+  - **P1 Genuine Engine Peer Delegation**:
+    - Implemented autonomous engine-initiated delegation in `ObservationEngine.handle_record_event` (`self._delegate()` to `planning.create_plan` on follow-up).
+    - Implemented autonomous delegation in `PerceptionEngine.handle_structure_input` (`self._delegate()` to `observation.record_event` on `record_observation=True`).
+    - Enforced depth decrementing, timeouts, downstream failure propagation, and skipping of irrelevant engines.
+    - Authored 4 delegation regression tests in `backend/tests/ring1/test_mesh_integration.py` (8/8 mesh integration tests pass).
+  - **P1 Real Plan Step Execution & Evidence-Based Replanning**:
+    - Created deterministic `PlanStepExecutor` in `backend/app/ring1/execution/executor.py` resolving capabilities through `MeshRouter` with real typed requests and responses.
+    - Eliminated direct `StepStatus.COMPLETED` object mutations in `Ring1TestRunner` and test harnesses; steps only complete upon genuine successful execution.
+    - Added controlled execution boundary fault injection mechanism for test modes without synthetic dictionaries.
+    - Updated `PlanningEngine._build_recovery_steps` and `handle_request_replan` to consume actual execution `evidence` and `actual_result`, prevent repeated retries, mark superseded failed steps as `SKIPPED`, and retain completed steps.
+    - Authored 5 executor regression tests in `backend/tests/ring1/test_plan_executor.py` (5/5 tests pass).
+  - **Plan State Ephemerality**:
+    - Verified session-scoped in-memory plan storage in `PlanningEngine._plans` (PostgreSQL plan persistence explicitly deferred by ADR-008 / D-016 design).
+    - Added explicit restart behavior test `test_planning_in_memory_ephemerality_restart_behavior` in `backend/tests/ring1/test_planning.py`.
+  - **Honest Test Console & Service Runner**:
+    - Updated `Ring1TestRunner` in `backend/app/ring1/service.py` to route steps through `PlanStepExecutor`, execute real capability envelopes, observe genuine boundary failures in `force_failure` mode, request real replanning, and execute revised plans.
+  - **Full Test Suite & Compilation**:
+    - Ring 1 tests: 58/58 passed.
+    - Full project test suite: 236/236 backend and AI tests passed (0 failures).
+    - Frontend TypeScript typecheck: 0 errors (`tsc --noEmit`).
+    - Frontend Next.js production build: 30/30 routes compiled successfully.
+
+## Next
+- User action required: rotate Gemini API key in Google AI Studio console (it was committed in historical documentation prior to redaction).
+- Frontend maintenance: address Next.js upgrade recommendation (`next upgrade --agent=security`).
+- Future Ring 2 transition: vector embeddings, pgvector semantic search, multi-document RAG, and relational plan persistence.
 
 ## Blockers
-- None. Push completed successfully and verified on remote origin/main.
+- None.
+

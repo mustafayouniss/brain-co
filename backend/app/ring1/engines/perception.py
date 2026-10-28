@@ -20,6 +20,7 @@ import json
 from typing import Any, Optional
 
 from app.ring1.contracts.capabilities import (
+    OBSERVATION_RECORD_EVENT,
     PERCEPTION_STRUCTURE_INPUT,
     CapabilityRegistry,
 )
@@ -119,7 +120,7 @@ class PerceptionEngine(BaseEngine):
             )
             if result is not None:
                 meta = result.get("metadata", {})
-                return self._success(request, {
+                resp_payload = {
                     "input_id": input_id,
                     "content_type": source_type,
                     "detected_type": source_type,
@@ -131,7 +132,32 @@ class PerceptionEngine(BaseEngine):
                     "status": "success",
                     "uncertainty": [],
                     "errors": [],
-                })
+                }
+
+                # Optional genuine delegation to ObservationEngine
+                if (
+                    payload.get("record_observation", False)
+                    and self._mesh_router is not None
+                    and request.constraints.max_delegations_remaining > 0
+                ):
+                    try:
+                        obs_resp = await self._delegate(
+                            parent_request=request,
+                            recipient_capability=OBSERVATION_RECORD_EVENT,
+                            payload={
+                                "event_type": "input_structured",
+                                "source": "perception",
+                                "payload": result["content"],
+                            },
+                        )
+                        resp_payload["delegated_observation"] = {
+                            "status": obs_resp.status.value,
+                            "payload": obs_resp.payload,
+                        }
+                    except Exception as exc:
+                        self._logger.warning("Delegation from perception to observation failed: %s", exc)
+
+                return self._success(request, resp_payload)
 
         # Step 4: LLM-assisted processing for unknown/ambiguous inputs
         llm_result = await self._process_with_llm(source_type, raw_content)

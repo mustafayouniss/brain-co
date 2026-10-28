@@ -155,3 +155,17 @@ Imagine a legal operations room with 6 specialists sitting at a round table:
 ### The Mesh Router (The Courier)
 Instead of having a single monolithic "boss" that controls every micro-action, all specialists communicate through a lightweight courier called the **Mesh Router**. Every message travels in a secure envelope (`MeshRequest` / `MeshResponse`) that carries the task ID, trace ID, context boundaries, and a delegation countdown so loops are mathematically impossible.
 
+### The Live Test Console (The Glass Control Room)
+To visually watch this team of 6 specialists work together in real-time, we built a floating console on the frontend called **Ring 1 Live Test**.
+- **The Analogy**: Like a glass observation window overlooking the operations room. When you press "Run Integration Test", you see the courier carry envelopes from desk to desk in real time.
+- **The Live Trace**: A chronological ledger showing every envelope sent, received, and completed.
+- **The Delegation Graph**: A visual map with glowing lines that light up only when specialists pass work to each other.
+- **The Plan Version Inspector**: Shows how the Planning specialist creates an initial checklist (Version 1), preserves finished steps when a snag occurs (like missing context), and writes a revised checklist (Version 2) without starting over from scratch.
+
+### The Plan Step Executor (The Checklist Runner)
+Previously, checklist steps were marked "done" on paper without actually running them. Now, we have a dedicated **Plan Step Executor**:
+- It takes each item on the checklist one by one.
+- It finds the right specialist through the courier (Mesh Router) and hands them the task in a secure envelope.
+- It waits for the specialist to complete the real work and only marks the checklist item "COMPLETED" when real results are delivered.
+- If a specialist runs into an error, the executor records the exact error details and failure evidence, halts forward execution, and asks Planning to revise the remaining checklist based on what actually went wrong.
+- The Planning specialist retains everything already completed, skips the failed item, and inserts tailored recovery actions (like retrieving relevant precedents or clarifying missing case details) instead of repeatedly guessing.

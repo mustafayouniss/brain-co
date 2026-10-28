@@ -156,5 +156,31 @@ The following versions were deployed, executed, and verified:
 | `6dd2ff08b0bb` | — | Enables `pgvector` extension |
 | `778be99882b6` | `users` | User accounts; UUID PK, case-insensitive unique email, VARCHAR+CHECK role, timezone-aware `created_at` |
 | `e819b932c01a` | `sources` | Raw ingested source documents; UUID PK, original_filename, content_type, size_bytes > 0 check, SHA-256 checksum, storage_key, storage_mode, source_type, uploaded_by FK (users.id), status, created_at, updated_at |
+| `f19a0a1b2c3d` | `ring1_observations`, `ring1_memory_records` | Ring 1 observations with idempotency keys and JSONB payload; Ring 1 memory records scoped to case_id |
 
+### Ring 1 Live Test & Observability Endpoints
+Mounted at `/api/v1/ring1` (protected by `get_test_operator_user` in `deps.py`):
+- `POST /api/v1/ring1/test-run`: Executes live reproducible scenarios across the six engines (`mode`: `"e2e"`, `"force_failure"`, `"custom_prompt"`). Supports real-time Server-Sent Events (`text/event-stream`) and JSON responses.
+- `GET /api/v1/ring1/test-runs/{run_id}`: Retrieves stored execution trace, plan version models, and graph edges from `Ring1TestRunRegistry`.
+- `GET /api/v1/ring1/test-runs`: Lists recent test runs with execution metrics.
+- `GET /api/v1/ring1/capabilities`: Lists registered capabilities from `CapabilityRegistry` and engine health.
 
+### Ring 1 Execution & Inter-Engine Delegation Architecture
+- `backend/app/ring1/execution/executor.py` (`PlanStepExecutor`):
+  - Deterministic executor that runs an active `Plan` step-by-step.
+  - Resolves step capabilities via `MeshRouter` and capability registry.
+  - Formulates typed `MeshRequest` payloads incorporating parent execution evidence and `ContextRef`.
+  - Captures real execution results and populates `step.actual_result` and `step.evidence`.
+  - Sets `step.status = StepStatus.COMPLETED` only after genuine capability success.
+  - Sets `step.status = StepStatus.FAILED` upon capability failure or downstream error.
+  - Supports controlled execution boundary fault injection for deterministic testing (`fault_injection={capability: error_spec}`).
+- **Autonomous Peer Delegation**:
+  - `ObservationEngine.handle_record_event`: delegates via `self._delegate()` to `planning.create_plan` when follow-up is required.
+  - `PerceptionEngine.handle_structure_input`: delegates via `self._delegate()` to `observation.record_event` when `record_observation=True`.
+  - Context isolation: strictly preserves `ContextRef` across all delegated hops, decrements `max_delegations_remaining`, and prevents circular loops.
+- **Evidence-Based Replanning**:
+  - `PlanningEngine.handle_request_replan` evaluates failed step results, execution evidence, and failure codes.
+  - Dynamically synthesizes recovery capabilities (`retrieval.query`, `context.resolve`), retains completed steps, marks superseded failures as `SKIPPED`, and enforces `max_replans` termination.
+- **Plan Storage Scope**:
+  - Session/runtime scoped in `PlanningEngine._plans` (in-memory dictionary per process).
+  - Explicitly ephemeral across restarts; relational PostgreSQL persistence is deferred to Ring 2.

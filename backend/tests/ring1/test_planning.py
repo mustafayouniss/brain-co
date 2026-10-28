@@ -123,3 +123,31 @@ async def test_planning_get_plan_status(fake_llm_service):
     assert status_resp.status == ResultStatus.SUCCESS
     assert status_resp.payload["plan_id"] == plan_id
     assert status_resp.payload["status"] == PlanStatus.ACTIVE.value
+
+
+@pytest.mark.asyncio
+async def test_planning_in_memory_ephemerality_restart_behavior(fake_llm_service):
+    """Ring 1 plans are in-memory by design (PostgreSQL plan persistence is deferred to higher rings).
+
+    Proves that a fresh PlanningEngine instance does not retain plans from previous processes,
+    making process restart behavior explicit.
+    """
+    engine_process_1 = PlanningEngine(llm_service=fake_llm_service)
+    create_req = MeshRequest(
+        sender_engine="client",
+        recipient_capability=PLANNING_CREATE_PLAN,
+        payload={"goal": "Examine session-bound lifecycle"},
+    )
+    create_resp = await engine_process_1.handle_create_plan(create_req)
+    plan_id = create_resp.payload["plan_id"]
+
+    # Process restart: new engine instance
+    engine_process_2 = PlanningEngine(llm_service=fake_llm_service)
+    status_req = MeshRequest(
+        sender_engine="client",
+        recipient_capability=PLANNING_GET_PLAN_STATUS,
+        payload={"plan_id": plan_id},
+    )
+    status_resp = await engine_process_2.handle_get_plan_status(status_req)
+    assert status_resp.status == ResultStatus.FAILED
+    assert status_resp.errors[0].code == EngineErrorCode.DATA_NOT_FOUND.value

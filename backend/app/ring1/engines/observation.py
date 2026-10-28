@@ -130,10 +130,52 @@ class ObservationEngine(BaseEngine):
         )
 
         # Step 5: Determine follow-up
-        requires_follow_up = self._should_follow_up(event_type)
+        if "requires_follow_up" in payload:
+            requires_follow_up = bool(payload["requires_follow_up"])
+        elif "follow_up_required" in payload:
+            requires_follow_up = bool(payload["follow_up_required"])
+        else:
+            requires_follow_up = self._should_follow_up(event_type)
 
-        # Step 6: Return result
-        return self._success(request, {
+        # Step 6: Genuine Peer Delegation (if follow-up required and router is configured)
+        delegated_result = None
+        if (
+            requires_follow_up
+            and self._mesh_router is not None
+            and request.constraints.max_delegations_remaining > 0
+            and payload.get("auto_delegate", True)
+        ):
+            target_cap = payload.get("follow_up_capability") or PLANNING_CREATE_PLAN
+            delegated_payload = payload.get("follow_up_payload") or {
+                "goal": f"Execute follow-up for observed event: {event_type}",
+                "context": {
+                    "observation_id": observation_id,
+                    "event_type": event_type,
+                    "source": normalized.get("source", "unknown"),
+                },
+            }
+            try:
+                delegated_resp = await self._delegate(
+                    parent_request=request,
+                    recipient_capability=target_cap,
+                    payload=delegated_payload,
+                )
+                delegated_result = {
+                    "capability": target_cap,
+                    "status": delegated_resp.status.value,
+                    "payload": delegated_resp.payload,
+                    "errors": [e.model_dump() for e in delegated_resp.errors] if delegated_resp.errors else [],
+                }
+            except Exception as exc:
+                self._logger.warning("Delegation from observation failed: %s", exc)
+                delegated_result = {
+                    "capability": target_cap,
+                    "status": "error",
+                    "error": str(exc),
+                }
+
+        # Step 7: Return typed result
+        result_payload = {
             "observation_id": observation_id,
             "event_id": event_id,
             "event_type": event_type,
@@ -146,7 +188,11 @@ class ObservationEngine(BaseEngine):
             "requires_follow_up": requires_follow_up,
             "follow_up_required": requires_follow_up,
             "follow_up_capability": PLANNING_CREATE_PLAN if requires_follow_up else None,
-        })
+        }
+        if delegated_result is not None:
+            result_payload["delegated_result"] = delegated_result
+
+        return self._success(request, result_payload)
 
 
     # -----------------------------------------------------------------
@@ -226,6 +272,21 @@ class ObservationEngine(BaseEngine):
     ) -> str:
         """Persist the observation to the database or in-memory store."""
         observation_id = str(uuid.uuid4())
+        ctx_ref_str = (
+            request.context_ref.ref
+            if hasattr(request.context_ref, "ref")
+            else str(request.context_ref)
+            if request.context_ref
+            else None
+        )
+        case_id = request.payload.get("case_id") or (
+            request.context_ref.case_id if hasattr(request.context_ref, "case_id") else None
+        )
+        organization_id = request.payload.get("organization_id") or (
+            request.context_ref.organization_id
+            if hasattr(request.context_ref, "organization_id")
+            else None
+        )
 
         if self._db_session_factory:
             session: Session = self._db_session_factory()
@@ -235,9 +296,9 @@ class ObservationEngine(BaseEngine):
                     event_type=normalized["event_type"],
                     source=normalized["source"],
                     actor_ref=normalized.get("actor_ref"),
-                    context_ref=request.context_ref,
-                    case_id=request.payload.get("case_id"),
-                    organization_id=request.payload.get("organization_id"),
+                    context_ref=ctx_ref_str,
+                    case_id=case_id,
+                    organization_id=organization_id,
                     payload=normalized.get("payload"),
                     metadata_=normalized.get("metadata"),
                     trace_id=request.trace_id,
@@ -254,6 +315,7 @@ class ObservationEngine(BaseEngine):
                 session.rollback()
                 self._logger.error("Failed to persist observation: %s", str(exc))
                 raise
+
             finally:
                 session.close()
         else:

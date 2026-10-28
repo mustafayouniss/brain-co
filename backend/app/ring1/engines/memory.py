@@ -147,10 +147,38 @@ class BasicMemoryEngine(BaseEngine):
         Payload expected:
         - record_id: str / uuid
         - case_id: str (optional, enforced against record's case_id if present)
+
+        Security: context_ref is REQUIRED on reads (same as writes) so that
+        callers without a scoped context cannot bypass case-boundary enforcement.
         """
         validation_err = self.validate_request(request)
         if validation_err:
             return validation_err
+
+        # Enforce context boundary — must mirror the store path.
+        # Without this check a caller with no context_ref would pass
+        # expected_case_id=None into the isolation guard, which short-circuits
+        # the `if expected_case_id and …` condition and allows cross-case reads.
+        context_err = self.require_context_ref(request)
+        if context_err:
+            return context_err
+
+        context_ref = request.context_ref
+        if not context_ref or not context_ref.case_id:
+            return self._error(
+                request,
+                ResultStatus.NEEDS_CLARIFICATION,
+                EngineErrorCode.CONTEXT_MISSING,
+                "A valid context_ref with case_id is required for memory reads.",
+            )
+
+        if not context_ref.organization_id:
+            return self._error(
+                request,
+                ResultStatus.NEEDS_CLARIFICATION,
+                EngineErrorCode.CONTEXT_MISSING,
+                "A valid context_ref with organization_id is required for memory reads.",
+            )
 
         record_id = request.payload.get("record_id")
         if not record_id:
@@ -161,21 +189,33 @@ class BasicMemoryEngine(BaseEngine):
                 "Missing required 'record_id' in memory get request.",
             )
 
-        expected_case_id = request.payload.get("case_id") or (
-            request.context_ref.case_id if request.context_ref else None
-        )
+        # Derive authorized scope from trusted context_ref rather than trusting payload
+        authorized_case_id = context_ref.case_id
+        authorized_org_id = context_ref.organization_id
+
+        # If payload specifies case_id, verify it matches the authorized context
+        payload_case_id = request.payload.get("case_id")
+        if payload_case_id and payload_case_id != authorized_case_id:
+            return self._error(
+                request,
+                ResultStatus.FAILED,
+                EngineErrorCode.AUTHORIZATION_DENIED,
+                "Access denied: payload case_id does not match authorized context.",
+            )
 
         if self._db_session_factory is not None:
             return await self._get_from_db(
                 request=request,
                 record_id=record_id,
-                expected_case_id=expected_case_id,
+                authorized_case_id=authorized_case_id,
+                authorized_org_id=authorized_org_id,
             )
         else:
             return self._get_from_memory(
                 request=request,
                 record_id=record_id,
-                expected_case_id=expected_case_id,
+                authorized_case_id=authorized_case_id,
+                authorized_org_id=authorized_org_id,
             )
 
     # -----------------------------------------------------------------
@@ -268,7 +308,8 @@ class BasicMemoryEngine(BaseEngine):
         self,
         request: MeshRequest,
         record_id: str,
-        expected_case_id: Optional[str],
+        authorized_case_id: str,
+        authorized_org_id: str,
     ) -> MeshResponse:
         session: Session = self._db_session_factory()
         try:
@@ -289,16 +330,19 @@ class BasicMemoryEngine(BaseEngine):
                     request,
                     ResultStatus.FAILED,
                     EngineErrorCode.DATA_NOT_FOUND,
-                    f"Memory record '{record_id}' not found.",
+                    "Memory record not found.",
                 )
 
-            # Enforce case isolation: prevent cross-context access
-            if expected_case_id and record.case_id and record.case_id != expected_case_id:
+            # Enforce case and organization isolation: prevent cross-context access
+            # Do not leak foreign identifiers or existence details in the denial message
+            if (record.case_id and record.case_id != authorized_case_id) or (
+                record.organization_id and record.organization_id != authorized_org_id
+            ):
                 return self._error(
                     request,
                     ResultStatus.FAILED,
                     EngineErrorCode.AUTHORIZATION_DENIED,
-                    f"Access denied: record belongs to case '{record.case_id}', not '{expected_case_id}'.",
+                    "Access denied: unauthorized context for requested memory record.",
                 )
 
             return self._success(
@@ -390,7 +434,8 @@ class BasicMemoryEngine(BaseEngine):
         self,
         request: MeshRequest,
         record_id: str,
-        expected_case_id: Optional[str],
+        authorized_case_id: str,
+        authorized_org_id: str,
     ) -> MeshResponse:
         rec = self._in_memory_records.get(record_id)
         if not rec:
@@ -398,15 +443,19 @@ class BasicMemoryEngine(BaseEngine):
                 request,
                 ResultStatus.FAILED,
                 EngineErrorCode.DATA_NOT_FOUND,
-                f"Memory record '{record_id}' not found.",
+                "Memory record not found.",
             )
 
-        if expected_case_id and rec.get("case_id") and rec["case_id"] != expected_case_id:
+        # Enforce case and organization isolation: prevent cross-context access
+        # Do not leak foreign identifiers or existence details in the denial message
+        if (rec.get("case_id") and rec["case_id"] != authorized_case_id) or (
+            rec.get("organization_id") and rec["organization_id"] != authorized_org_id
+        ):
             return self._error(
                 request,
                 ResultStatus.FAILED,
                 EngineErrorCode.AUTHORIZATION_DENIED,
-                f"Access denied: record belongs to case '{rec['case_id']}', not '{expected_case_id}'.",
+                "Access denied: unauthorized context for requested memory record.",
             )
 
         return self._success(
