@@ -205,7 +205,7 @@ Redis and background workers are treated as fast delivery messengers, not perman
 In distributed systems, a worker can become slow, unresponsive, or disconnected (a "zombie"). If the system assumes the worker died and assigns the task to someone else, the zombie might wake up later and try to write outdated results.
 - Every task has a `lease_generation` number.
 - Whenever a worker claims a task, the generation increments.
-- All database writes (recording facts, updating status, logging audit events) verify the current generation inside the write transaction.
+- All database writes (recording facts, updating state, logging audit events) verify the current generation inside the write transaction.
 - If a zombie worker wakes up and tries to commit work with an expired generation, PostgreSQL immediately rejects it. Outdated work can never overwrite newer truth.
 
 ### Human Validation Authority over Knowledge Candidates

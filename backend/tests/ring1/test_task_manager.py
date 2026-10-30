@@ -317,3 +317,73 @@ def test_replay_task(db_session: Session):
 
     db_session.refresh(original_task)
     assert original_task.replayed_to_task_id == new_task.id
+
+
+def test_database_contract_consistency():
+    """Verify consistent state naming across Task, TaskOutbox, and AuditEvent models."""
+    from sqlalchemy import inspect
+    from app.models.audit import AuditEvent
+
+    task_cols = [c.name for c in inspect(Task).columns]
+    assert "state" in task_cols, "Task model must define 'state' column"
+    assert "status" not in task_cols, "Task model must not define conflicting 'status' column"
+
+    outbox_cols = [c.name for c in inspect(TaskOutbox).columns]
+    assert "status" in outbox_cols, "TaskOutbox model must define 'status' column"
+
+    audit_cols = [c.name for c in inspect(AuditEvent).columns]
+    assert "previous_state" in audit_cols, "AuditEvent must record 'previous_state'"
+    assert "new_state" in audit_cols, "AuditEvent must record 'new_state'"
+
+    # Verify exact valid TaskState transitions
+    valid_states = {s.value for s in TaskState}
+    assert valid_states == {"PENDING", "QUEUED", "RUNNING", "RETRYING", "SUCCEEDED", "FAILED", "DEAD_LETTER"}
+
+
+def test_stale_worker_cannot_commit_side_effects(db_session: Session):
+    """A worker whose generation was superseded cannot assert fence or commit side effects."""
+    from app.ring1.models.observation import MemoryRecord, Observation
+
+    task, _ = TaskManager.create_task_with_outbox(
+        session=db_session,
+        organization_id="org-cairo",
+        case_id="case-101",
+        task_type="legal_memo_analysis",
+        payload={"contract_id": "c-123"},
+    )
+    task.state = TaskState.QUEUED.value
+    db_session.flush()
+
+    # Worker 1 claims task at generation 1
+    gen1 = TaskManager.claim_task_for_worker(session=db_session, task_id=task.id, worker_id="worker-1")
+    assert gen1 == 1
+
+    # Lease expires and reaper reclaims task, bumping generation to 2
+    task.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=10)
+    db_session.flush()
+    reclaimed = TaskManager.reclaim_stale_tasks(session=db_session)
+    assert task.id in reclaimed
+
+    # Worker 2 claims task at generation 3 (reclaimed was RETRYING gen 2, worker 2 claims gen 3)
+    gen2 = TaskManager.claim_task_for_worker(session=db_session, task_id=task.id, worker_id="worker-2")
+    assert gen2 == 3
+
+    # Worker 1 wakes up and attempts to write an observation or assert fence under superseded gen 1
+    with pytest.raises(StaleWorkerLeaseError):
+        TaskManager.assert_worker_fence(session=db_session, task_id=task.id, current_generation=gen1)
+
+    # Worker 1 attempting commit_task_success is strictly rejected
+    with pytest.raises(StaleWorkerLeaseError):
+        TaskManager.commit_task_success(
+            session=db_session,
+            task_id=task.id,
+            current_generation=gen1,
+            result={"stale": "data"},
+        )
+
+    # Ensure no side-effects or state overwrite from worker 1
+    db_session.refresh(task)
+    assert task.lease_generation == 3
+    assert task.worker_id == "worker-2"
+    assert task.state == TaskState.RUNNING.value
+

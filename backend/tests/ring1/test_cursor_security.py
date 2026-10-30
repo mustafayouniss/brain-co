@@ -209,3 +209,123 @@ def test_cursor_rejects_non_url_safe_characters():
             current_filters={},
         )
     assert exc_info.value.status_code == 400
+
+
+def _forge_signed_token(payload: dict) -> str:
+    import base64
+    import hashlib
+    import hmac
+    import json
+    from app.core.config import settings
+
+    raw_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    encoded_payload = base64.urlsafe_b64encode(raw_bytes).decode("utf-8").rstrip("=")
+    sig = hmac.new(settings.SECRET_KEY.encode("utf-8"), encoded_payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{encoded_payload}.{sig}"
+
+
+def test_cursor_rejects_timezone_naive_timestamp_in_payload():
+    filters = {"status": "ACTIVE"}
+    filter_hash = hashlib.sha256(json.dumps(filters, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    payload = {
+        "v": 1,
+        "org_id": "org-test-1",
+        "case_id": "case-1",
+        "filter_hash": filter_hash,
+        "sort": "created_at_desc_id_desc",
+        "created_at": "2026-10-30T12:00:00",  # Naive (no timezone offset)
+        "id": str(uuid.uuid4()),
+    }
+    token = _forge_signed_token(payload)
+
+    with pytest.raises(HTTPException) as exc_info:
+        decode_and_verify_cursor(
+            cursor_str=token,
+            expected_org_id="org-test-1",
+            expected_case_id="case-1",
+            current_filters=filters,
+        )
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "INVALID_CURSOR_TIMESTAMP"
+
+
+def test_cursor_rejects_invalid_uuid_variant():
+    filters = {}
+    filter_hash = hashlib.sha256(json.dumps(filters, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    # Nil UUID is variant RESERVED_NCS (not RFC_4122)
+    payload = {
+        "v": 1,
+        "org_id": "org-test-1",
+        "case_id": "",
+        "filter_hash": filter_hash,
+        "sort": "created_at_desc_id_desc",
+        "created_at": "2026-10-30T12:00:00+00:00",
+        "id": "00000000-0000-0000-0000-000000000000",
+    }
+    token = _forge_signed_token(payload)
+
+    with pytest.raises(HTTPException) as exc_info:
+        decode_and_verify_cursor(
+            cursor_str=token,
+            expected_org_id="org-test-1",
+            expected_case_id=None,
+            current_filters=filters,
+        )
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "INVALID_CURSOR_UUID"
+
+
+def test_cursor_rejects_unsupported_version():
+    filters = {}
+    filter_hash = hashlib.sha256(json.dumps(filters, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    payload = {
+        "v": 2,  # Version 2 unsupported
+        "org_id": "org-test-1",
+        "case_id": "",
+        "filter_hash": filter_hash,
+        "sort": "created_at_desc_id_desc",
+        "created_at": "2026-10-30T12:00:00+00:00",
+        "id": str(uuid.uuid4()),
+    }
+    token = _forge_signed_token(payload)
+
+    with pytest.raises(HTTPException) as exc_info:
+        decode_and_verify_cursor(
+            cursor_str=token,
+            expected_org_id="org-test-1",
+            expected_case_id=None,
+            current_filters=filters,
+        )
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "UNSUPPORTED_CURSOR_VERSION"
+
+
+def test_cursor_rejects_unexpected_extra_fields():
+    filters = {}
+    filter_hash = hashlib.sha256(json.dumps(filters, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    payload = {
+        "v": 1,
+        "org_id": "org-test-1",
+        "case_id": "",
+        "filter_hash": filter_hash,
+        "sort": "created_at_desc_id_desc",
+        "created_at": "2026-10-30T12:00:00+00:00",
+        "id": str(uuid.uuid4()),
+        "extra_field": "unauthorized_injection",
+    }
+    token = _forge_signed_token(payload)
+
+    with pytest.raises(HTTPException) as exc_info:
+        decode_and_verify_cursor(
+            cursor_str=token,
+            expected_org_id="org-test-1",
+            expected_case_id=None,
+            current_filters=filters,
+        )
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "UNEXPECTED_CURSOR_FIELDS"
+

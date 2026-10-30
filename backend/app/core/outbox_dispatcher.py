@@ -157,7 +157,7 @@ class OutboxDispatcher:
         session: Session,
         outbox_id: UUID,
     ) -> bool:
-        """Admin manual retry: transitions FAILED_DISPATCH -> PENDING and increments generation to invalidate stale dispatchers."""
+        """Admin manual retry: transitions FAILED_DISPATCH -> PENDING, increments generation to invalidate stale dispatchers, and reconciles Task state if failed from dispatch exhaustion."""
         now = datetime.now(timezone.utc)
         stmt = (
             sa.update(TaskOutbox)
@@ -172,7 +172,23 @@ class OutboxDispatcher:
                 dispatch_lease_expires_at=None,
                 updated_at=now,
             )
-            .returning(TaskOutbox.id)
+            .returning(TaskOutbox.id, TaskOutbox.task_id)
         )
-        reset = session.execute(stmt).scalar_one_or_none()
-        return reset is not None
+        row = session.execute(stmt).first()
+        if not row:
+            return False
+
+        # Reconcile associated Task state if it failed due to dispatch exhaustion
+        session.execute(
+            sa.update(Task)
+            .where(
+                Task.id == row.task_id,
+                Task.state == TaskState.FAILED.value,
+            )
+            .values(
+                state=TaskState.PENDING.value,
+                error_details=None,
+                updated_at=now,
+            )
+        )
+        return True

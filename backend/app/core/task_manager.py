@@ -1,7 +1,11 @@
 """Durable Task Lifecycle & Worker Fencing Manager for Ring 1.
 
 PostgreSQL is the single authoritative source of truth for task states.
-Implements monotonic lease fencing, atomic claiming, and safe task replays.
+Adopts at-least-once execution semantics with monotonic lease generation fencing.
+Does not assume exactly-once distributed execution.
+Requires all task side effects and engine result writes to be idempotent.
+Atomic worker claiming prevents concurrent ownership, and generation fencing
+rejects stale worker commits after lease expiry or revocation.
 """
 
 from __future__ import annotations
