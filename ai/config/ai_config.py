@@ -12,6 +12,12 @@ from ai.core.services.llm_service import LLMService
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ENV_FILE_PATH)
+except ImportError:
+    pass
+
 
 try:
     from pydantic_settings import BaseSettings, SettingsConfigDict
