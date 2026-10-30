@@ -1,9 +1,11 @@
 """Basic Retrieval Engine — contextual query and search over Ring 1 memory and observations.
 
 Deterministic Core:
-- Enforce strict case_id isolation (never return records from other cases)
-- Query MemoryRecords and Observations filtered by case_id, record_type, and text
-- Lexical substring and metadata matching
+- Enforce strict case_id and organization_id isolation (never return records from other cases)
+- Strategy boundary separating search strategy from storage
+- Step-by-step pipeline: candidate selection -> scope filtering -> ranking -> result assembly
+- Lexical keyword and metadata token ranking (non-vector baseline)
+- Extensible architecture ready for future vector retrieval once model/dimensions approved
 - Pagination support (limit, offset)
 - In-memory fallback for testing and lightweight execution
 
@@ -11,41 +13,177 @@ Intelligence Layer:
 - Query intent analysis / keyword expansion when query terms are broad
 
 Must not: cross context boundaries, leak records across cases,
-bypass case_id filtering, return hallucinated records.
+bypass case_id filtering, pretend ILIKE is semantic search, create unapproved vector schemas.
 """
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 import json
+import re
 from typing import Any, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.context import BrainContext
 from app.ring1.contracts.capabilities import RETRIEVAL_QUERY, CapabilityRegistry
 from app.ring1.contracts.envelopes import MeshRequest, MeshResponse, ResultStatus
 from app.ring1.contracts.errors import EngineErrorCode
+from app.ring1.contracts.protocols import EngineResult, IRetrievalEngine
 from app.ring1.engines.base import BaseEngine
 from app.ring1.models.observation import MemoryRecord, Observation
 
 
-class BasicRetrievalEngine(BaseEngine):
+class IRetrievalStrategy(ABC):
+    """Abstract retrieval strategy separating search ranking from persistence."""
+
+    @abstractmethod
+    async def execute_search(
+        self,
+        query: str,
+        context: BrainContext,
+        limit: int,
+        offset: int,
+        filters: Optional[dict[str, Any]],
+        db_session_factory: Any,
+        in_memory_records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Execute candidate selection, scope filtering, ranking, and assembly."""
+        ...
+
+
+class LexicalRetrievalStrategy(IRetrievalStrategy):
+    """Deterministic lexical retrieval strategy.
+    
+    Performs explicit candidate selection, strict case isolation, term-frequency
+    ranking, and result assembly without claiming semantic vector retrieval.
+    """
+
+    async def execute_search(
+        self,
+        query: str,
+        context: BrainContext,
+        limit: int,
+        offset: int,
+        filters: Optional[dict[str, Any]],
+        db_session_factory: Any,
+        in_memory_records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        # 1. Scope Filtering & Candidate Selection
+        raw_candidates = await self._fetch_scoped_candidates(
+            context=context,
+            filters=filters,
+            db_session_factory=db_session_factory,
+            in_memory_records=in_memory_records,
+        )
+
+        # 2. Strict Scope Validation (Defense in Depth)
+        scoped_candidates = [
+            c for c in raw_candidates
+            if c.get("case_id") == context.case_id
+            and (not c.get("organization_id") or c.get("organization_id") == context.organization_id)
+        ]
+
+        # 3. Candidate Scoring and Ranking
+        query_tokens = [t.lower() for t in re.findall(r"\w+", query)] if query else []
+        ranked_candidates = []
+
+        for c in scoped_candidates:
+            score = self._compute_relevance_score(c, query_tokens)
+            if query_tokens and score <= 0.0:
+                continue  # Filter out non-matching candidates if query provided
+            ranked_candidates.append((score, c))
+
+        # Sort by relevance score descending, then recency
+        ranked_candidates.sort(key=lambda x: (x[0], x[1].get("created_at", "")), reverse=True)
+
+        # 4. Result Assembly & Keyset/Offset Slicing
+        sliced = ranked_candidates[offset : offset + limit]
+        assembled = []
+        for score, cand in sliced:
+            item = dict(cand)
+            item["relevance_score"] = round(score, 4)
+            assembled.append(item)
+
+        return assembled
+
+    async def _fetch_scoped_candidates(
+        self,
+        context: BrainContext,
+        filters: Optional[dict[str, Any]],
+        db_session_factory: Any,
+        in_memory_records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        record_type = (filters or {}).get("record_type")
+        candidates = []
+
+        if db_session_factory is not None:
+            session: Session = db_session_factory()
+            try:
+                stmt = select(MemoryRecord).where(MemoryRecord.case_id == context.case_id)
+                if context.organization_id:
+                    stmt = stmt.where(
+                        (MemoryRecord.organization_id == context.organization_id)
+                        | (MemoryRecord.organization_id.is_(None))
+                    )
+                if record_type:
+                    stmt = stmt.where(MemoryRecord.record_type == record_type)
+
+                records = session.execute(stmt).scalars().all()
+                for rec in records:
+                    candidates.append({
+                        "record_id": str(rec.id),
+                        "record_type": rec.record_type,
+                        "case_id": rec.case_id,
+                        "organization_id": rec.organization_id,
+                        "context_ref": rec.context_ref,
+                        "payload": rec.payload,
+                        "metadata": rec.metadata_,
+                        "created_at": rec.created_at.isoformat() if rec.created_at else "",
+                    })
+            finally:
+                session.close()
+        else:
+            for rec in in_memory_records:
+                if rec.get("case_id") == context.case_id:
+                    if record_type and rec.get("record_type") != record_type:
+                        continue
+                    candidates.append(rec)
+
+        return candidates
+
+    def _compute_relevance_score(self, candidate: dict[str, Any], query_tokens: list[str]) -> float:
+        if not query_tokens:
+            return 1.0  # Base match when no search query specified
+
+        payload_str = json.dumps(candidate.get("payload") or {}).lower()
+        meta_str = json.dumps(candidate.get("metadata") or {}).lower()
+        rec_type_str = str(candidate.get("record_type") or "").lower()
+        combined_text = f"{rec_type_str} {payload_str} {meta_str}"
+
+        matches = sum(1 for token in query_tokens if token in combined_text)
+        return float(matches) / float(len(query_tokens))
+
+
+class BasicRetrievalEngine(BaseEngine, IRetrievalEngine):
     """Ring 1 Basic Retrieval Engine [GB].
 
     Executes context-scoped queries over persisted memory records and observations.
-    Context isolation is strictly enforced: queries without a valid case_id
-    are rejected, and results from foreign cases are never returned.
+    Delegates candidate selection and ranking to an injectable IRetrievalStrategy.
     """
 
     def __init__(
         self,
         db_session_factory=None,
         memory_engine=None,
+        strategy: Optional[IRetrievalStrategy] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._db_session_factory = db_session_factory
         self._memory_engine = memory_engine
+        self._strategy = strategy or LexicalRetrievalStrategy()
         self._in_memory_records: list[dict[str, Any]] = []
 
     @property
@@ -60,33 +198,63 @@ class BasicRetrievalEngine(BaseEngine):
             description="Query context-scoped records and observations with strict case isolation.",
         )
 
-    # -----------------------------------------------------------------
-    # In-memory record feeder (for testing)
-    # -----------------------------------------------------------------
-
     def add_in_memory_record(self, record: dict[str, Any]) -> None:
         """Add a record to the in-memory pool (used during tests)."""
         self._in_memory_records.append(record)
 
     # -----------------------------------------------------------------
-    # Capability: retrieval.query
+    # Pure Engine Protocol implementation (Decoupled from Transport)
+    # -----------------------------------------------------------------
+
+    async def search(
+        self,
+        query: str,
+        context: BrainContext,
+        limit: int = 20,
+        filters: Optional[dict[str, Any]] = None,
+    ) -> EngineResult:
+        """Execute a context-scoped retrieval query adhering to IRetrievalEngine."""
+        if not context or not context.organization_id:
+            return EngineResult(
+                error={"code": "INVALID_CONTEXT", "message": "Valid BrainContext with organization_id required"}
+            )
+        if not context.case_id or not str(context.case_id).strip():
+            return EngineResult(
+                error={"code": "CONTEXT_MISSING", "message": "Non-empty case_id required for retrieval"}
+            )
+
+        clamped_limit = min(max(limit, 1), 100)
+        results = await self._strategy.execute_search(
+            query=query,
+            context=context,
+            limit=clamped_limit,
+            offset=0,
+            filters=filters,
+            db_session_factory=self._db_session_factory,
+            in_memory_records=self._in_memory_records,
+        )
+
+        return EngineResult(
+            data={
+                "query": query,
+                "case_id": context.case_id,
+                "total_results": len(results),
+                "results": results,
+                "records": results,
+            },
+            is_terminal=True,
+        )
+
+    # -----------------------------------------------------------------
+    # Capability: retrieval.query (Mesh Adapter for Backward Compatibility)
     # -----------------------------------------------------------------
 
     async def handle_query(self, request: MeshRequest) -> MeshResponse:
-        """Query memory records with strict context isolation.
-
-        Payload expected:
-        - query: str (optional search term)
-        - record_type: str (optional filter)
-        - case_id: str (optional, defaults to request.context_ref.case_id)
-        - limit: int (optional, default 10, max 100)
-        - offset: int (optional, default 0)
-        """
+        """Query memory records with strict context isolation via mesh adapter."""
         validation_err = self.validate_request(request)
         if validation_err:
             return validation_err
 
-        # Context boundary check: query MUST have a valid context_ref with case_id and organization_id
         context_err = self.require_context_ref(request)
         if context_err:
             return context_err
@@ -111,7 +279,6 @@ class BasicRetrievalEngine(BaseEngine):
         authorized_case_id = context_ref.case_id.strip()
         authorized_org_id = context_ref.organization_id.strip()
 
-        # Reject payload ID spoofing
         payload_case_id = request.payload.get("case_id")
         if payload_case_id and str(payload_case_id).strip() != authorized_case_id:
             return self._error(
@@ -135,184 +302,38 @@ class BasicRetrievalEngine(BaseEngine):
         limit = min(int(request.payload.get("limit", 10)), 100)
         offset = max(int(request.payload.get("offset", 0)), 0)
 
-        # Intelligence Layer: query keyword extraction if query is complex
-        keywords = [query_text.lower()] if query_text else []
-        if len(query_text.split()) > 5:
-            expanded = await self._extract_keywords(query_text)
-            if expanded:
-                keywords.extend(expanded)
+        context = BrainContext(
+            organization_id=authorized_org_id,
+            case_id=authorized_case_id,
+            user_id=getattr(request, "actor_ref", None),
+        )
 
-        if self._db_session_factory is not None:
-            return await self._query_db(
-                request=request,
-                case_id=authorized_case_id,
-                organization_id=authorized_org_id,
-                keywords=keywords,
-                record_type=record_type,
-                limit=limit,
-                offset=offset,
-            )
-        else:
-            return self._query_in_memory(
-                request=request,
-                case_id=authorized_case_id,
-                organization_id=authorized_org_id,
-                keywords=keywords,
-                record_type=record_type,
-                limit=limit,
-                offset=offset,
-            )
-
-    # -----------------------------------------------------------------
-    # Database query
-    # -----------------------------------------------------------------
-
-    async def _query_db(
-        self,
-        request: MeshRequest,
-        case_id: str,
-        organization_id: str,
-        keywords: list[str],
-        record_type: Optional[str],
-        limit: int,
-        offset: int,
-    ) -> MeshResponse:
-        session: Session = self._db_session_factory()
-        try:
-            # Strictly filter by case_id and organization_id
-            stmt = select(MemoryRecord).where(MemoryRecord.case_id == case_id)
-            if organization_id:
-                stmt = stmt.where(
-                    (MemoryRecord.organization_id == organization_id)
-                    | (MemoryRecord.organization_id.is_(None))
-                )
-
-            if record_type:
-                stmt = stmt.where(MemoryRecord.record_type == record_type)
-
-            stmt = stmt.order_by(MemoryRecord.created_at.desc())
-            all_records = session.execute(stmt).scalars().all()
-
-            results = []
-            for rec in all_records:
-                # Strictly reject any record from another case or foreign organization (defense in depth)
-                if rec.case_id != case_id:
-                    continue
-                if rec.organization_id and organization_id and rec.organization_id != organization_id:
-                    continue
-
-                if keywords and any(k for k in keywords if k):
-                    rec_payload_str = json.dumps(rec.payload or {}).lower()
-                    rec_meta_str = json.dumps(rec.metadata_ or {}).lower()
-                    rec_type_str = str(rec.record_type or "").lower()
-                    if not any(k in rec_payload_str or k in rec_meta_str or k in rec_type_str for k in keywords if k):
-                        continue
-
-
-                results.append({
-                    "record_id": str(rec.id),
-                    "record_type": rec.record_type,
-                    "case_id": rec.case_id,
-                    "context_ref": rec.context_ref,
-                    "payload": rec.payload,
-                    "metadata": rec.metadata_,
-                    "created_at": rec.created_at.isoformat(),
-                })
-
-            total_count = len(results)
-            paginated = results[offset : offset + limit]
-
-            return self._success(
-                request,
-                {
-                    "total": total_count,
-                    "limit": limit,
-                    "offset": offset,
-                    "case_id": case_id,
-                    "records": paginated,
-                },
-                context_ref=request.context_ref.ref if request.context_ref else None,
-            )
-        except Exception as exc:
-            return self._error(
-                request,
-                ResultStatus.FAILED,
-                EngineErrorCode.INTERNAL_EXECUTION_ERROR,
-                f"Failed to execute retrieval query: {str(exc)}",
-            )
-        finally:
-            session.close()
-
-    # -----------------------------------------------------------------
-    # In-memory query
-    # -----------------------------------------------------------------
-
-    def _query_in_memory(
-        self,
-        request: MeshRequest,
-        case_id: str,
-        organization_id: str,
-        keywords: list[str],
-        record_type: Optional[str],
-        limit: int,
-        offset: int,
-    ) -> MeshResponse:
-        # Collect candidates from internal pool and optionally memory_engine
-        candidates: list[dict[str, Any]] = list(self._in_memory_records)
+        in_memory = list(self._in_memory_records)
         if self._memory_engine is not None and hasattr(self._memory_engine, "_in_memory_records"):
-            candidates.extend(self._memory_engine._in_memory_records.values())
+            in_memory.extend(self._memory_engine._in_memory_records.values())
 
-        matched = []
-        for rec in candidates:
-            # Strict case and organization isolation
-            if rec.get("case_id") != case_id:
-                continue
-            if rec.get("organization_id") and organization_id and rec.get("organization_id") != organization_id:
-                continue
-
-            if record_type and rec.get("record_type") != record_type:
-                continue
-
-            if keywords and any(k for k in keywords if k):
-                payload_str = json.dumps(rec.get("payload") or {}).lower()
-                meta_str = json.dumps(rec.get("metadata") or {}).lower()
-                rec_type_str = str(rec.get("record_type") or "").lower()
-                if not any(k in payload_str or k in meta_str or k in rec_type_str for k in keywords if k):
-                    continue
-
-            matched.append(rec)
-
-
-        total_count = len(matched)
-        paginated = matched[offset : offset + limit]
+        filters = {"record_type": record_type} if record_type else None
+        results = await self._strategy.execute_search(
+            query=query_text,
+            context=context,
+            limit=limit,
+            offset=offset,
+            filters=filters,
+            db_session_factory=self._db_session_factory,
+            in_memory_records=in_memory,
+        )
 
         return self._success(
             request,
             {
-                "total": total_count,
+                "query": query_text,
+                "case_id": authorized_case_id,
+                "organization_id": authorized_org_id,
+                "total_results": len(results),
+                "results": results,
+                "records": results,
                 "limit": limit,
                 "offset": offset,
-                "case_id": case_id,
-                "records": paginated,
             },
-            context_ref=request.context_ref.ref if request.context_ref else None,
+            context_ref=context_ref.ref if hasattr(context_ref, "ref") else str(context_ref),
         )
-
-    # -----------------------------------------------------------------
-    # Intelligence Layer: keyword expansion
-    # -----------------------------------------------------------------
-
-    async def _extract_keywords(self, query: str) -> list[str]:
-        """Extract search terms using LLM if available."""
-        if not self._llm_service:
-            # Deterministic fallback: simple token split
-            return [w.lower() for w in query.split() if len(w) > 3]
-
-        prompt = (
-            "Extract 2-4 key search keywords or synonyms from this user query. "
-            "Return JSON array of lowercase strings only, e.g. [\"contract\", \"breach\"]"
-        )
-        result = await self._call_llm_json(prompt, query)
-        if isinstance(result, list):
-            return [str(k).lower() for k in result if isinstance(k, str)]
-        return [w.lower() for w in query.split() if len(w) > 3]

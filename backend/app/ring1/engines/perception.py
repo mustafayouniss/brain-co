@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import json
 from typing import Any, Optional
+import uuid
 
+from app.core.context import BrainContext
 from app.ring1.contracts.capabilities import (
     OBSERVATION_RECORD_EVENT,
     PERCEPTION_STRUCTURE_INPUT,
@@ -26,6 +28,7 @@ from app.ring1.contracts.capabilities import (
 )
 from app.ring1.contracts.envelopes import MeshRequest, MeshResponse, ResultStatus
 from app.ring1.contracts.errors import EngineErrorCode
+from app.ring1.contracts.protocols import EngineResult, IPerceptionEngine
 from app.ring1.engines.base import BaseEngine
 
 
@@ -41,11 +44,12 @@ _UNSUPPORTED_SOURCE_TYPES = frozenset({
 })
 
 
-class PerceptionEngine(BaseEngine):
+class PerceptionEngine(BaseEngine, IPerceptionEngine):
     """Ring 1 Perception Engine [GB].
 
     Processes raw inputs into structured representations using deterministic
     parsers for known formats and the Intelligence Layer for ambiguous inputs.
+    Operates on normalized input independently of transport protocols.
     """
 
     @property
@@ -61,45 +65,50 @@ class PerceptionEngine(BaseEngine):
         )
 
     # -----------------------------------------------------------------
-    # Capability handler
+    # Pure Engine Protocol implementation (Decoupled from Transport)
     # -----------------------------------------------------------------
 
-    async def handle_structure_input(self, request: MeshRequest) -> MeshResponse:
-        """Structure a raw input into a validated representation.
-
-        Decision order:
-        1. Validate request schema
-        2. Check source_type and select processing mode
-        3. Use deterministic parser for known formats
-        4. Use LLM only for unknown/ambiguous inputs
-        5. Validate output
-        6. Return typed result
+    async def process(
+        self,
+        raw_input: Any,
+        context: BrainContext,
+        task_metadata: Optional[dict[str, Any]] = None,
+    ) -> EngineResult:
+        """Transport-independent processing of raw input into structured observation data.
+        
+        Enforces server-side context validation and explicit error handling without
+        orchestration authority.
         """
-        # Step 1: Validate request
-        validation_err = self.validate_request(request)
-        if validation_err:
-            return validation_err
+        if not context or not context.organization_id:
+            return EngineResult(
+                error={"code": "INVALID_CONTEXT", "message": "Valid BrainContext with organization_id required"}
+            )
 
-        payload = request.payload
-        source_type = (payload.get("source_type") or payload.get("input_type") or "").strip().lower()
-        raw_content = payload.get("raw_content")
-        input_id = payload.get("input_id", request.message_id)
+        metadata = dict(task_metadata or {})
+        source_type = ""
+        raw_content = raw_input
+        input_id = f"in-{uuid.uuid4().hex[:12]}" if "uuid" in globals() else "in-input"
 
-        if not raw_content and not payload.get("raw_content_ref"):
-            return self._error(
-                request,
-                ResultStatus.INVALID_REQUEST,
-                EngineErrorCode.INVALID_PAYLOAD,
-                "Either 'raw_content' or 'raw_content_ref' is required.",
+        # Normalize raw_input if passed as a dictionary envelope
+        if isinstance(raw_input, dict) and ("raw_content" in raw_input or "content" in raw_input):
+            source_type = (raw_input.get("source_type") or raw_input.get("input_type") or "").strip().lower()
+            raw_content = raw_input.get("raw_content", raw_input.get("content"))
+            input_id = raw_input.get("input_id", input_id)
+            if "metadata" in raw_input and isinstance(raw_input["metadata"], dict):
+                metadata.update(raw_input["metadata"])
+
+        if not raw_content and not metadata.get("raw_content_ref"):
+            return EngineResult(
+                error={"code": EngineErrorCode.INVALID_PAYLOAD.value, "message": "Either 'raw_content' or 'raw_content_ref' is required."}
             )
 
         # Explicitly check for unsupported formats
         if source_type in _UNSUPPORTED_SOURCE_TYPES:
-            return self._error(
-                request,
-                ResultStatus.FAILED,
-                EngineErrorCode.UNSUPPORTED_INPUT_TYPE,
-                f"Unsupported input type '{source_type}'.",
+            return EngineResult(
+                error={
+                    "code": EngineErrorCode.UNSUPPORTED_INPUT_TYPE.value,
+                    "message": f"Unsupported input type '{source_type}'.",
+                }
             )
 
         # Detect source_type if not provided
@@ -113,14 +122,12 @@ class PerceptionEngine(BaseEngine):
                 else:
                     source_type = "text"
 
-        # Step 2–3: Deterministic processing for known types
+        # Deterministic processing for known types
         if source_type in _KNOWN_SOURCE_TYPES:
-            result = self._process_deterministic(
-                source_type, raw_content, payload.get("metadata", {})
-            )
+            result = self._process_deterministic(source_type, raw_content, metadata)
             if result is not None:
                 meta = result.get("metadata", {})
-                resp_payload = {
+                data = {
                     "input_id": input_id,
                     "content_type": source_type,
                     "detected_type": source_type,
@@ -133,31 +140,128 @@ class PerceptionEngine(BaseEngine):
                     "uncertainty": [],
                     "errors": [],
                 }
+                return EngineResult(
+                    data=data,
+                    proposed_destination="observation.record_event",
+                    proposed_capability=OBSERVATION_RECORD_EVENT,
+                    proposed_payload={
+                        "event_type": "input_structured",
+                        "source": "perception",
+                        "payload": result["content"],
+                    },
+                )
 
-                # Optional genuine delegation to ObservationEngine
-                if (
-                    payload.get("record_observation", False)
-                    and self._mesh_router is not None
-                    and request.constraints.max_delegations_remaining > 0
-                ):
-                    try:
-                        obs_resp = await self._delegate(
-                            parent_request=request,
-                            recipient_capability=OBSERVATION_RECORD_EVENT,
-                            payload={
-                                "event_type": "input_structured",
-                                "source": "perception",
-                                "payload": result["content"],
-                            },
-                        )
-                        resp_payload["delegated_observation"] = {
-                            "status": obs_resp.status.value,
-                            "payload": obs_resp.payload,
-                        }
-                    except Exception as exc:
-                        self._logger.warning("Delegation from perception to observation failed: %s", exc)
+        # LLM-assisted processing for unknown/ambiguous inputs
+        llm_result = await self._process_with_llm(source_type, raw_content)
+        if llm_result is not None:
+            c_type = llm_result.get("content_type", source_type or "unknown")
+            s_content = llm_result.get("structured_content", {})
+            meta = llm_result.get("metadata", {})
+            data = {
+                "input_id": input_id,
+                "content_type": c_type,
+                "detected_type": c_type,
+                "structured_content": s_content,
+                "parsed_content": s_content,
+                "metadata": meta,
+                "extracted_metadata": meta,
+                "processing_mode": "llm",
+                "status": "success",
+                "uncertainty": llm_result.get("uncertainty", []),
+                "errors": [],
+            }
+            return EngineResult(
+                data=data,
+                proposed_destination="observation.record_event",
+                proposed_capability=OBSERVATION_RECORD_EVENT,
+                proposed_payload={
+                    "event_type": "input_structured",
+                    "source": "perception",
+                    "payload": s_content,
+                },
+            )
 
-                return self._success(request, resp_payload)
+        # Fallback — return partial result with raw content
+        raw_struct = {"raw": raw_content} if isinstance(raw_content, str) else raw_content
+        data = {
+            "input_id": input_id,
+            "content_type": source_type or "unknown",
+            "detected_type": source_type or "unknown",
+            "structured_content": raw_struct,
+            "parsed_content": raw_struct,
+            "metadata": metadata,
+            "extracted_metadata": metadata,
+            "processing_mode": "fallback",
+            "status": "partial",
+            "uncertainty": ["Could not fully structure the input."],
+            "errors": [],
+        }
+        return EngineResult(data=data)
+
+    # -----------------------------------------------------------------
+    # Capability handler (Mesh Adapter for Backward Compatibility)
+    # -----------------------------------------------------------------
+
+    async def handle_structure_input(self, request: MeshRequest) -> MeshResponse:
+        """Structure a raw input into a validated representation via mesh adapter."""
+        # Step 1: Validate request
+        validation_err = self.validate_request(request)
+        if validation_err:
+            return validation_err
+
+        payload = request.payload
+        ctx_org = getattr(request.context_ref, "organization_id", None) if request.context_ref else None
+        ctx_case = getattr(request.context_ref, "case_id", None) if request.context_ref else None
+        ctx_user = getattr(request.context_ref, "user_id", None) if request.context_ref else getattr(request, "actor_ref", None)
+
+        context = BrainContext(
+            organization_id=ctx_org or "org-default",
+            case_id=ctx_case,
+            user_id=ctx_user,
+        )
+
+        engine_res = await self.process(
+            raw_input=payload,
+            context=context,
+            task_metadata=payload.get("metadata"),
+        )
+
+        if engine_res.error:
+            code = engine_res.error.get("code")
+            msg = engine_res.error.get("message", "Perception error")
+            status = ResultStatus.FAILED
+            if code == EngineErrorCode.INVALID_PAYLOAD.value:
+                status = ResultStatus.INVALID_REQUEST
+            return self._error(
+                request,
+                status,
+                EngineErrorCode(code) if code in [e.value for e in EngineErrorCode] else EngineErrorCode.INTERNAL_ERROR,
+                msg,
+            )
+
+        resp_payload = dict(engine_res.data)
+
+        # Optional genuine delegation to ObservationEngine if requested
+        if (
+            payload.get("record_observation", False)
+            and self._mesh_router is not None
+            and request.constraints.max_delegations_remaining > 0
+            and engine_res.proposed_capability
+        ):
+            try:
+                obs_resp = await self._delegate(
+                    parent_request=request,
+                    recipient_capability=engine_res.proposed_capability,
+                    payload=engine_res.proposed_payload or {},
+                )
+                resp_payload["delegated_observation"] = {
+                    "status": obs_resp.status.value,
+                    "payload": obs_resp.payload,
+                }
+            except Exception as exc:
+                self._logger.warning("Delegation from perception to observation failed: %s", exc)
+
+        return self._success(request, resp_payload)
 
         # Step 4: LLM-assisted processing for unknown/ambiguous inputs
         llm_result = await self._process_with_llm(source_type, raw_content)

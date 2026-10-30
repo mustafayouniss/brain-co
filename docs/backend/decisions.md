@@ -83,6 +83,21 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
 
 ---
 
+## D-012 Ring 1 Architecture, Execution Foundation & Engine Decoupling
+
+- **Scope**: Ring 1 Core Engines, Task Infrastructure, and Capability Execution.
+- **Five Core Engines**: Exactly five core engines: Perception, Observation, Context, Memory, Retrieval.
+- **Advisory Planning**: PlanningEngine is an advisory 6th capability under ADR-008 with zero execution authority.
+- **No Central Orchestrator**: Prohibits any central business orchestrator. The Backend Runtime Dispatcher is strictly domain-blind and validates registered capabilities and permitted handoffs without business logic.
+- **PostgreSQL Task Ledger**: PostgreSQL is the authoritative task and execution state ledger (`tasks`, `task_outbox`, `audit_events`). Redis/ARQ acts purely as an ephemeral message delivery broker.
+- **Worker Claim & Generation Fencing**: Worker claims, lease renewals, state transitions, and audit logs are strictly fenced by `lease_generation`. Superseded workers cannot commit side effects.
+- **Transactional Outbox**: Tasks and outbox records are created atomically in PostgreSQL. Dispatch claims use `FOR UPDATE SKIP LOCKED` with incremented `dispatch_generation` and lease expiry.
+- **Human Validation Authority**: Memory candidates are stored in `candidate` status and require explicit human validation authority (`validation_authority == True`) to be promoted. Automatic self-validation is forbidden.
+- **Cryptographic Cursor Pagination**: Keyset cursor pagination uses HMAC-SHA256 signatures with Base64URL encoding, binding cursors to organization, case, sort order, and canonical filter hashes.
+- **Vector Freeze**: Maintained pending written AI/Data Science sign-off. Non-vector lexical candidate ranking implemented.
+
+---
+
 
 ## Open questions (do not assume an answer)
 

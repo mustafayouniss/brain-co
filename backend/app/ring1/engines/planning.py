@@ -44,14 +44,17 @@ from app.ring1.contracts.plan_models import (
     ReplanResponse,
     StepStatus,
 )
+from app.core.context import BrainContext
+from app.ring1.contracts.protocols import IPlanningEngine
 from app.ring1.engines.base import BaseEngine
 
 
-class PlanningEngine(BaseEngine):
+class PlanningEngine(BaseEngine, IPlanningEngine):
     """Ring 1 Planning Engine [GB].
 
-    Responsible for creating and revising structured plans. Operates strictly within
-    the capability mesh by assigning work to registered capabilities.
+    Advisory 6th capability under ADR-008. Responsible for creating and revising
+    declarative execution plans. Has ZERO execution authority and does not
+    enqueue tasks or manage worker lifecycle.
     """
 
     def __init__(self, **kwargs):
@@ -81,6 +84,54 @@ class PlanningEngine(BaseEngine):
             self.handle_get_plan_status,
             description="Retrieve the current status, version, and steps of an active plan.",
         )
+
+    # -----------------------------------------------------------------
+    # Pure Engine Protocol implementation (Advisory 6th capability)
+    # -----------------------------------------------------------------
+
+    async def create_plan(
+        self,
+        goal: str,
+        context: BrainContext,
+        max_replans: int = 2,
+    ) -> Plan:
+        """Advisory plan generation: produces declarative step sequence."""
+        steps = await self._generate_plan_steps(goal)
+        plan = Plan(
+            task_id=f"plan-task-{uuid.uuid4().hex[:8]}",
+            goal=goal,
+            steps=steps,
+            status=PlanStatus.ACTIVE,
+            completion_criteria=f"Goal achieved: {goal}",
+            stop_conditions=[],
+            allowed_capabilities=list(ALL_CAPABILITIES),
+            context_ref=f"ctx-{context.case_id}" if context.case_id else None,
+            max_replans=max_replans,
+            replan_count=0,
+        )
+        self._plans[plan.plan_id] = plan
+        return plan
+
+    async def request_replan(
+        self,
+        plan: Any,
+        failure_evidence: dict[str, Any],
+        context: BrainContext,
+    ) -> Plan:
+        """Advisory replanning following step failure or changing evidence."""
+        plan_id = plan.plan_id if hasattr(plan, "plan_id") else str(plan)
+        target_plan = self._plans.get(plan_id)
+        if not target_plan:
+            raise ValueError(f"Plan '{plan_id}' not found")
+
+        if not target_plan.can_replan():
+            target_plan.status = PlanStatus.FAILED
+            raise RuntimeError(f"Replan limit exceeded ({target_plan.max_replans})")
+
+        target_plan.version += 1
+        target_plan.replan_count += 1
+        target_plan.steps = await self._generate_plan_steps(target_plan.goal)
+        return target_plan
 
     # -----------------------------------------------------------------
     # Capability: planning.create_plan

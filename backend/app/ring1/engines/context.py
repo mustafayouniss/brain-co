@@ -2,34 +2,37 @@
 
 Deterministic Core:
 - Accept explicit context hints (organization_id, domain_id, case_id, user_id)
-- Validate provided identifiers
+- Validate provided identifiers against server-side BrainContext
+- Reject caller-controlled organization overrides
 - Produce a ContextRef with resolution status
 - Report ambiguity for missing or incomplete identifiers
 
 Intelligence Layer:
 - Attempt context inference from payload metadata when hints are insufficient
 
-Must not: guess missing identifiers, treat context resolution as authorization,
-expand task scope, override isolation rules.
+Must not: guess missing identifiers, treat client hints as authorization,
+permit cross-organization overrides, expand task scope, override isolation rules.
 """
 
 from __future__ import annotations
 
 from typing import Any, Optional
 
+from app.core.context import BrainContext
 from app.ring1.contracts.capabilities import CONTEXT_RESOLVE, CapabilityRegistry
 from app.ring1.contracts.context_ref import ContextRef, ResolutionStatus
 from app.ring1.contracts.envelopes import MeshRequest, MeshResponse, ResultStatus
 from app.ring1.contracts.errors import EngineErrorCode
+from app.ring1.contracts.protocols import EngineResult, IContextEngine
 from app.ring1.engines.base import BaseEngine
 
 
-class ContextEngine(BaseEngine):
+class ContextEngine(BaseEngine, IContextEngine):
     """Ring 1 Context Engine [GB].
 
     Resolves contextual scope boundaries for tasks, observations, and records.
-    Produces a ContextRef that downstream engines carry through reads/writes
-    to enforce data isolation.
+    Derives organization scope strictly from server-side authenticated context and
+    rejects client-side organization overrides.
     """
 
     @property
@@ -45,20 +48,64 @@ class ContextEngine(BaseEngine):
         )
 
     # -----------------------------------------------------------------
-    # Capability handler
+    # Pure Engine Protocol implementation (Decoupled from Transport)
+    # -----------------------------------------------------------------
+
+    async def resolve_context(
+        self,
+        request_scope: dict[str, Any],
+        context: BrainContext,
+    ) -> EngineResult:
+        """Resolve and validate context boundaries against authenticated BrainContext.
+        
+        Rejects client attempts to override organization_id. Validates case_id.
+        """
+        if not context or not context.organization_id:
+            return EngineResult(
+                error={"code": "INVALID_CONTEXT", "message": "Valid BrainContext with organization_id required"}
+            )
+
+        client_org = request_scope.get("organization_id")
+        if client_org and client_org != context.organization_id:
+            return EngineResult(
+                error={
+                    "code": "FORBIDDEN_ORG_OVERRIDE",
+                    "message": f"Client attempted organization override '{client_org}' does not match server scope '{context.organization_id}'",
+                }
+            )
+
+        case_id = request_scope.get("case_id") or context.case_id
+        domain_id = request_scope.get("domain_id")
+        user_id = context.user_id or request_scope.get("user_id")
+
+        context_ref = self._resolve_deterministic(
+            org_id=context.organization_id,
+            domain_id=domain_id,
+            case_id=case_id,
+            user_id=user_id,
+            source_ref=request_scope.get("source_ref"),
+        )
+
+        data = {
+            "context_ref": context_ref.context_ref_id,
+            "organization_id": context.organization_id,
+            "domain_id": domain_id,
+            "case_id": case_id,
+            "user_id": user_id,
+            "status": context_ref.resolution_status.value,
+            "resolution_status": context_ref.resolution_status.value,
+            "ambiguities": context_ref.ambiguities,
+            "scope_constraints": context_ref.scope_constraints,
+        }
+
+        return EngineResult(data=data, is_terminal=True)
+
+    # -----------------------------------------------------------------
+    # Capability handler (Mesh Adapter for Backward Compatibility)
     # -----------------------------------------------------------------
 
     async def handle_resolve(self, request: MeshRequest) -> MeshResponse:
-        """Resolve context scope from provided hints and source references.
-
-        Decision order:
-        1. Validate request
-        2. Extract context hints from payload
-        3. Attempt deterministic resolution
-        4. Report ambiguity or insufficient data if resolution fails
-        5. Return typed ContextRef
-        """
-        # Step 1: Validate
+        """Resolve context scope from provided hints and source references."""
         validation_err = self.validate_request(request)
         if validation_err:
             return validation_err
@@ -67,13 +114,23 @@ class ContextEngine(BaseEngine):
         context_hint = payload.get("context_hint", {})
         source_ref = payload.get("source_ref")
 
-        # Step 2: Extract explicit hints
-        org_id = context_hint.get("organization_id")
-        domain_id = context_hint.get("domain_id")
-        case_id = context_hint.get("case_id")
-        user_id = context_hint.get("user_id")
+        # Server-side context validation
+        server_org = getattr(request.context_ref, "organization_id", None) if request.context_ref else None
+        hint_org = context_hint.get("organization_id")
 
-        # Step 3: Deterministic resolution
+        if server_org and hint_org and hint_org != server_org:
+            return self._error(
+                request,
+                ResultStatus.FAILED,
+                EngineErrorCode.PERMISSION_DENIED,
+                f"Client attempted organization override '{hint_org}' does not match context scope '{server_org}'",
+            )
+
+        org_id = server_org or hint_org
+        domain_id = context_hint.get("domain_id")
+        case_id = context_hint.get("case_id") or (getattr(request.context_ref, "case_id", None) if request.context_ref else None)
+        user_id = context_hint.get("user_id") or getattr(request.context_ref, "user_id", None) if request.context_ref else getattr(request, "actor_ref", None)
+
         context_ref = self._resolve_deterministic(
             org_id=org_id,
             domain_id=domain_id,
@@ -82,13 +139,11 @@ class ContextEngine(BaseEngine):
             source_ref=source_ref,
         )
 
-        # Step 4: If insufficient, try LLM inference (only for ambiguity)
         if context_ref.resolution_status == ResolutionStatus.INSUFFICIENT_DATA:
             llm_context = await self._try_llm_resolution(payload)
             if llm_context is not None:
                 context_ref = llm_context
 
-        # Step 5: Build response
         status = ResultStatus.SUCCESS
         if context_ref.resolution_status == ResolutionStatus.AMBIGUOUS:
             status = ResultStatus.NEEDS_CLARIFICATION
@@ -141,23 +196,14 @@ class ContextEngine(BaseEngine):
         user_id: Optional[str],
         source_ref: Optional[str],
     ) -> ContextRef:
-        """Resolve context from explicit identifiers.
-
-        Resolution rules:
-        - If case_id is provided → explicit resolution (case is the primary isolation key)
-        - If org_id provided without case_id → ambiguous (case_id required for isolation)
-        - If no identifiers → ambiguous
-        """
+        """Resolve context from explicit identifiers."""
         ambiguities: list[str] = []
         scope_constraints: list[str] = []
 
-        # Check what we have
         has_case = bool(case_id)
         has_org = bool(org_id)
-        has_user = bool(user_id)
 
         if has_case:
-            # Case-level resolution: the strongest isolation scope
             scope_constraints.append(f"case_id={case_id}")
             if has_org:
                 scope_constraints.append(f"organization_id={org_id}")
@@ -172,83 +218,65 @@ class ContextEngine(BaseEngine):
             )
 
         if has_org and not has_case:
-            # Org-level without case is ambiguous for case-scoped operations
             ambiguities.append("Missing required case_id for case-level boundary enforcement.")
             scope_constraints.append(f"organization_id={org_id}")
             return ContextRef(
                 organization_id=org_id,
                 domain_id=domain_id,
+                case_id=None,
                 user_id=user_id,
                 resolution_status=ResolutionStatus.AMBIGUOUS,
                 ambiguities=ambiguities,
                 scope_constraints=scope_constraints,
             )
 
-        if has_user and not has_org and not has_case:
-            ambiguities.append("user_id provided without organization_id or case_id")
+        ambiguities.append("No contextual identifiers provided in hints.")
+        return ContextRef(
+            organization_id=None,
+            domain_id=None,
+            case_id=None,
+            user_id=user_id,
+            resolution_status=ResolutionStatus.AMBIGUOUS,
+            ambiguities=ambiguities,
+        )
+
+    # -----------------------------------------------------------------
+    # Intelligence Layer: LLM resolution fallback
+    # -----------------------------------------------------------------
+
+    async def _try_llm_resolution(self, payload: dict[str, Any]) -> Optional[ContextRef]:
+        """Attempt to infer context using LLM when deterministic resolution is insufficient."""
+        if not self._llm_service:
+            return None
+
+        prompt = (
+            "You are the Context Engine of Ring 1 General Brain. "
+            "Analyze the following request payload and infer the contextual boundaries. "
+            "Extract: organization_id, domain_id, case_id, user_id if present or strongly implied. "
+            "Do NOT guess or invent identifiers that are not supported by the data. "
+            "Return JSON: {'organization_id': str|null, 'domain_id': str|null, "
+            "'case_id': str|null, 'user_id': str|null, 'confidence': float}."
+        )
+
+        result = await self._call_llm_json(prompt, str(payload))
+        if result is None or not isinstance(result, dict):
+            return None
+
+        confidence = result.get("confidence", 0.0)
+        if confidence < 0.7:
+            return None
+
+        case_id = result.get("case_id")
+        org_id = result.get("organization_id")
+
+        if case_id:
             return ContextRef(
-                user_id=user_id,
-                domain_id=domain_id,
-                resolution_status=ResolutionStatus.AMBIGUOUS,
-                ambiguities=ambiguities,
+                organization_id=org_id,
+                domain_id=result.get("domain_id"),
+                case_id=case_id,
+                user_id=result.get("user_id"),
+                resolution_status=ResolutionStatus.EXPLICIT,
+                scope_constraints=[f"case_id={case_id}"],
             )
 
-        # No identifiers at all
-        return ContextRef(
-            resolution_status=ResolutionStatus.AMBIGUOUS,
-            ambiguities=["No context identifiers provided (missing case_id)."],
-        )
-
-
-    # -----------------------------------------------------------------
-    # Intelligence Layer
-    # -----------------------------------------------------------------
-
-    async def _try_llm_resolution(
-        self, payload: dict[str, Any]
-    ) -> Optional[ContextRef]:
-        """Attempt to infer context from payload metadata using the LLM.
-
-        This is only called when deterministic resolution produced
-        INSUFFICIENT_DATA. The LLM can suggest identifiers based on
-        source references or metadata, but CANNOT fabricate IDs.
-        """
-        source_ref = payload.get("source_ref")
-        metadata = payload.get("metadata", {})
-
-        if not source_ref and not metadata:
-            return None
-
-        system_prompt = (
-            "You are a context resolution engine. Given the metadata below, "
-            "determine if you can identify the organization_id, case_id, or user_id. "
-            "Return a JSON object with keys: organization_id, case_id, user_id "
-            "(null if not determinable), and confidence (float 0-1). "
-            "NEVER fabricate identifiers. If unsure, return null for each field."
-        )
-
-        user_content = f"source_ref: {source_ref}\nmetadata: {metadata}"
-        result = await self._call_llm_json(system_prompt, user_content, temperature=0.1)
-
-        if result is None:
-            return None
-
-        # Only use LLM suggestions if confidence is high
-        confidence = result.get("confidence", 0)
-        if confidence < 0.8:
-            return None
-
-        inferred_org = result.get("organization_id")
-        inferred_case = result.get("case_id")
-        inferred_user = result.get("user_id")
-
-        if not inferred_org and not inferred_case and not inferred_user:
-            return None
-
-        return self._resolve_deterministic(
-            org_id=inferred_org,
-            domain_id=payload.get("context_hint", {}).get("domain_id"),
-            case_id=inferred_case,
-            user_id=inferred_user,
-            source_ref=source_ref,
-        )
+        return None

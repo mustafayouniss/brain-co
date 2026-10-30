@@ -1,6 +1,16 @@
 # Progress
 
-## Done
+- **Ring 1 Architectural Restructuring & Execution Foundation Implementation (2026-10-30)**:
+  - **PostgreSQL Task Ledger & Outbox**: Implemented `tasks`, `task_outbox`, and `audit_events` tables with Alembic migration `a28b3c4d5e6f`.
+  - **TaskManager**: Implemented atomic task+outbox creation, `FOR UPDATE SKIP LOCKED` worker claims, generation fencing (`lease_generation`), heartbeat renewal, and stale worker rejection.
+  - **OutboxDispatcher**: Implemented transactional outbox dispatcher with dispatch generation fencing, lease recovery, and safe terminal failure handling.
+  - **Core Security & Context**: Implemented immutable `BrainContext` dataclass, server-side context resolution, and HMAC-SHA256 Base64URL signed keyset cursors.
+  - **Handoff Policy & Runtime Dispatcher**: Implemented domain-blind `RuntimeDispatcher` and `HandoffPolicy` enforcing peer delegations, cycle detection, depth limits, and preventing autonomous planning by ObservationEngine.
+  - **Five Core Engines & Protocols**: Restructured Perception, Observation, Context, Memory, and Retrieval to implement pure Python protocols, with advisory PlanningEngine (ADR-008).
+  - **Human Validation Authority**: Memory candidate lifecycle requires `validation_authority = True` to promote candidates, strictly forbidding automatic self-promotion.
+  - **Lexical Retrieval Strategy**: Extracted `LexicalRetrievalStrategy` candidate selection and term-frequency ranking while preserving strict case isolation.
+  - **Test Runner Decomposition**: Decomposed monolithic 1,576-line `Ring1TestRunner` into focused services (`registry.py`, `test_scenario_service.py`, `pdf_pipeline_service.py`) and a clean ~140-line façade.
+  - **Test Suite**: Authored 37 new tests across 5 test suites (`test_task_manager.py`, `test_outbox_dispatcher.py`, `test_cursor_security.py`, `test_handoff_policy.py`, `test_engine_restructuring.py`). Total 298/298 tests passing (100% pass rate, zero regressions).
 - **Ring 1 Full Remediation, Real PDF Ingestion Pipeline, and Live Test Console**:
   - Remediated P0 security & context isolation in `BasicMemoryEngine` and `BasicRetrievalEngine` (enforced typed `ContextRef`, rejected payload ID spoofing, sanitized errors eliminating existence oracles).
   - Remediation of exposed API secrets: removed key snippet in documentation, configured safe `.env.example`, documented rotation requirement.

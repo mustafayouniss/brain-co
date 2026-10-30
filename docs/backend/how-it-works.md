@@ -184,3 +184,39 @@ Instead of feeding fake or simulated documents, the system now accepts real mult
    - **Step 7 (Memory Persistence)**: Stores validated facts into PostgreSQL (`ring1_memory_records`), strictly isolated by `case_id`.
    - **Step 8 (Verification Retrieval)**: Issues an independent search query against PostgreSQL to prove the facts can actually be retrieved.
    - **Step 9 (Scorecard)**: Emits a final scorecard reporting pages processed, candidate facts, persisted facts, and verified retrieval count.
+
+---
+
+## The Durable Execution Foundation (PostgreSQL Task Ledger & Outbox)
+
+### The Authoritative State Ledger
+Instead of tracking active tasks in Python memory dictionaries (which vanish if the server restarts), every task lives in a durable PostgreSQL table called `tasks`.
+- A task moves through strict, atomic state gates: `PENDING` → `QUEUED` → `RUNNING` → `SUCCEEDED` / `FAILED` / `DEAD_LETTER`.
+- When an API receives a request to start a task, it writes both the `Task` and an entry in `task_outbox` in the exact same database transaction. If the database crashes mid-way, either both are saved or neither is saved. There is zero chance of a task being lost or half-created.
+
+### The Outbox Dispatcher (The Reliable Mailroom)
+Redis and background workers are treated as fast delivery messengers, not permanent records of truth.
+- The mailroom (`OutboxDispatcher`) locks pending tasks safely using `FOR UPDATE SKIP LOCKED`.
+- It stamps each package with an incremented `dispatch_generation` and gives itself a bounded lease window.
+- It changes the task state to `QUEUED` before enqueueing to Redis.
+- If a delivery messenger crashes, the abandoned lease expires and the sweeper picks it up for redelivery without ever dropping tasks.
+
+### Generation Fencing (Preventing Zombie Workers)
+In distributed systems, a worker can become slow, unresponsive, or disconnected (a "zombie"). If the system assumes the worker died and assigns the task to someone else, the zombie might wake up later and try to write outdated results.
+- Every task has a `lease_generation` number.
+- Whenever a worker claims a task, the generation increments.
+- All database writes (recording facts, updating status, logging audit events) verify the current generation inside the write transaction.
+- If a zombie worker wakes up and tries to commit work with an expired generation, PostgreSQL immediately rejects it. Outdated work can never overwrite newer truth.
+
+### Human Validation Authority over Knowledge Candidates
+AI models and automated workers can suggest new facts, but they cannot declare them to be verified truth.
+- When an automated worker extracts facts, they are tagged with lifecycle state `candidate`.
+- A candidate can never promote itself to validated knowledge.
+- Only a verified human actor with `validation_authority = True` can promote a candidate to `validated` status, preserving complete human oversight over organizational knowledge.
+
+### Cryptographic HMAC Pagination Cursors
+When browsing through long lists of observations or records, pages must not leak confidential files or let attackers tamper with pagination tokens.
+- Pagination tokens are signed using HMAC-SHA256 and encoded with Base64URL.
+- The signature binds the cursor directly to the caller's organization ID, legal case ID, sort order, and filter parameters.
+- If anyone changes a single character, swaps the case ID, or alters the search filter, the signature verification fails immediately and halts the query before reaching the database.
+
