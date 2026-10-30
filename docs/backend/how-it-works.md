@@ -220,3 +220,33 @@ When browsing through long lists of observations or records, pages must not leak
 - The signature binds the cursor directly to the caller's organization ID, legal case ID, sort order, and filter parameters.
 - If anyone changes a single character, swaps the case ID, or alters the search filter, the signature verification fails immediately and halts the query before reaching the database.
 
+### One General Brain, Infinite Domains
+The General Brain is not a "Legal AI" or a "Sales Tool". It is a universal cognitive engine with five core capabilities:
+1. **Perception**: Takes raw data (text, documents, events) and turns it into structured observations without making assumptions about contracts, leads, or invoices.
+2. **Observation**: Records what was witnessed into PostgreSQL, tags it with a timestamp, and alerts real-time subscribers.
+3. **Context**: Figure out who is asking, what organization they belong to, and what boundary (like a specific case, sales deal, or shipment) limits their access.
+4. **Memory**: Stores knowledge candidates safely without letting them pretend to be verified truth.
+5. **Retrieval**: Searches memory strictly within the authorized scope, never peeking into other tenants' or cases' data.
+6. **Planning (Advisory)**: Proposes a step-by-step game plan for solving complex goals, and updates the plan if an engine reports missing information.
+
+Industry-specific intelligence (Egyptian Civil Law, B2B Sales, Maritime Logistics) lives in **Domain Extensions** outside the engines. When a law firm uses Brain-Co, the Legal Domain Extension interprets text as legal articles. When a logistics company uses Brain-Co, the Logistics Extension interprets it as vessel manifests—without altering a single line of engine code.
+
+### Three Tiers of Memory
+Memory is organized into three clean categories so data is never confused:
+- **Short-Term Memory (Redis/Scratchpad)**: Fast, temporary storage for work in progress (current plan, intermediate calculations, step results). Automatically expires after a short TTL. If Redis goes down, work is never lost because PostgreSQL is always the durable ledger.
+- **Observation Memory (PostgreSQL)**: An immutable historical log of everything the Brain observes. Observations are events, not facts.
+- **Long-Term Memory (PostgreSQL)**: Knowledge objects with a formal lifecycle: `candidate` -> `validated` -> `rejected`. Candidates cannot self-promote; only an authorized human can validate knowledge.
+
+### Real-Time Observation Streaming
+Users can open a live WebSocket connection to receive real-time updates as events occur.
+- Every WebSocket requires a verified JWT token.
+- Events are broadcast strictly within the user's organization.
+- Clients can filter the stream by case or scope to follow specific workflows without cross-tenant leakage.
+
+### Context-First Retrieval
+Unlike traditional search systems that search everything and filter out unauthorized results afterwards, Brain-Co enforces context **before** searching:
+- The user's authenticated organization and active case boundary are applied directly to the database query.
+- Records from other organizations or other cases never enter the candidate pool.
+- Unvalidated candidates are hidden from normal search results, ensuring only verified knowledge is returned.
+
+

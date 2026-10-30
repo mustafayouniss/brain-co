@@ -12,7 +12,7 @@ import uuid
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ResolutionStatus(str, Enum):
@@ -44,10 +44,27 @@ class ContextRef(BaseModel):
     organization_id: Optional[str] = None
     domain_id: Optional[str] = None
     case_id: Optional[str] = None
+    scope_id: Optional[str] = None
     user_id: Optional[str] = None
     resolution_status: ResolutionStatus = ResolutionStatus.INSUFFICIENT_DATA
     ambiguities: list[str] = Field(default_factory=list)
     scope_constraints: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_scope_and_case(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            scope = data.get("scope_id")
+            case = data.get("case_id")
+            if scope and not case:
+                data["case_id"] = scope
+            elif case and not scope:
+                data["scope_id"] = case
+        return data
+
+    @property
+    def effective_scope_id(self) -> Optional[str]:
+        return self.scope_id or self.case_id
 
     @property
     def ref(self) -> str:

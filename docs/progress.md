@@ -1,5 +1,20 @@
 # Progress
 
+- **Ring 1 General Brain Architecture & API Milestone (2026-10-30)**:
+  - **Domain-Agnostic Core Engines**: Decoupled Perception, Observation, Context, Memory, and Retrieval from legal or industry assumptions. Proved through automated tests (`test_domain_independence.py`) that new domains (Sales, Logistics, Healthcare) operate without modifying engine code.
+  - **Domain Extension Architecture**: Created `app/domains/` with `IDomainExtension` protocol and `DomainRegistry`, housing `LegalDomainExtension`, `SalesDomainExtension`, and `LogisticsFleetDomainExtension`.
+  - **Short-Term Memory Service**: Implemented `ShortTermMemoryService` in `app/core/short_term_memory.py` for task execution state caching with `org:{org}:task:{task}:{key}` scoping, TTL enforcement, and thread-safe in-memory fallback.
+  - **Observation WebSocket Manager**: Implemented `ObservationWebSocketManager` in `app/core/ws_manager.py` and real-time streaming endpoint `WS /api/v1/ws/observations` with JWT authentication and strict organization/scope broadcast isolation.
+  - **Ring 1 General Brain API Contracts (Section 17)**:
+    - `GET /api/v1/brain/status`: Health check, active engines, registered capabilities, active domain extensions.
+    - `POST /api/v1/observations`: Persist observations with idempotency, audit logging, and WebSocket broadcast.
+    - `GET /api/v1/observations`: Keyset cursor-paginated feed with cryptographic HMAC verification and event/source filters.
+    - `POST /api/v1/context/resolve`: Server-side context resolution asserting scope boundaries and ambiguity detection.
+    - `GET /api/v1/memory/{id}`: Tenant- and scope-isolated knowledge object retrieval with sanitized 404s.
+    - `GET /api/v1/retrieval/search`: Context-first lexical keyword search strictly filtering cross-tenant/cross-case data before ranking, excluding unvalidated candidates.
+    - `WS /api/v1/ws/observations`: Token-authenticated real-time observation streaming.
+  - **Automated Test Suite**: Authored 20 new tests across 3 test suites (`test_domain_independence.py`, `test_general_brain_api.py`, `test_short_term_memory.py`). Total 331/331 tests passing (100% pass rate, zero regressions).
+
 - **Ring 1 Architectural Restructuring & Execution Foundation Implementation (2026-10-30)**:
   - **PostgreSQL Task Ledger & Outbox**: Implemented `tasks`, `task_outbox`, and `audit_events` tables with Alembic migration `a28b3c4d5e6f`.
   - **TaskManager**: Implemented atomic task+outbox creation, `FOR UPDATE SKIP LOCKED` worker claims, generation fencing (`lease_generation`), heartbeat renewal, and stale worker rejection.

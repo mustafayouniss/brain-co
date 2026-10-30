@@ -51,12 +51,13 @@ _RECORD_ONLY_EVENT_TYPES: frozenset[str] = frozenset({
 })
 
 # Event types that explicitly indicate follow-up work is eligible
-_FOLLOW_UP_EVENT_TYPES: frozenset[str] = frozenset({
+_FOLLOW_UP_EVENT_TYPES: set[str] = {
     "document.uploaded",
     "case.created",
+    "entity.created",
     "message.received",
     "task.requested",
-})
+}
 
 
 class ObservationEngine(BaseEngine, IObservationEngine):
@@ -627,3 +628,8 @@ class ObservationEngine(BaseEngine, IObservationEngine):
         if event_type in _FOLLOW_UP_EVENT_TYPES:
             return True
         return False
+
+    @classmethod
+    def register_follow_up_event_type(cls, event_type: str) -> None:
+        """Register a domain-specific event type eligible for follow-up without modifying core code."""
+        _FOLLOW_UP_EVENT_TYPES.add(event_type)

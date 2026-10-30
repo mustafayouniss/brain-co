@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     ENVIRONMENT: str = "development"
+    ORGANIZATION_ID: str = "org-brain-corp"
     AI_ANONYMOUS_TESTING_ENABLED: bool = False
 
     @model_validator(mode="after")

@@ -74,8 +74,8 @@ class ContextEngine(BaseEngine, IContextEngine):
                 }
             )
 
-        case_id = request_scope.get("case_id") or context.case_id
-        domain_id = request_scope.get("domain_id")
+        case_id = request_scope.get("case_id") or request_scope.get("scope_id") or getattr(context, "effective_scope_id", None) or context.case_id
+        domain_id = request_scope.get("domain_id") or context.domain_id
         user_id = context.user_id or request_scope.get("user_id")
 
         context_ref = self._resolve_deterministic(
@@ -91,6 +91,7 @@ class ContextEngine(BaseEngine, IContextEngine):
             "organization_id": context.organization_id,
             "domain_id": domain_id,
             "case_id": case_id,
+            "scope_id": case_id,
             "user_id": user_id,
             "status": context_ref.resolution_status.value,
             "resolution_status": context_ref.resolution_status.value,
@@ -128,7 +129,12 @@ class ContextEngine(BaseEngine, IContextEngine):
 
         org_id = server_org or hint_org
         domain_id = context_hint.get("domain_id")
-        case_id = context_hint.get("case_id") or (getattr(request.context_ref, "case_id", None) if request.context_ref else None)
+        case_id = (
+            context_hint.get("case_id")
+            or context_hint.get("scope_id")
+            or (getattr(request.context_ref, "case_id", None) if request.context_ref else None)
+            or (getattr(request.context_ref, "scope_id", None) if request.context_ref else None)
+        )
         user_id = context_hint.get("user_id") or getattr(request.context_ref, "user_id", None) if request.context_ref else getattr(request, "actor_ref", None)
 
         context_ref = self._resolve_deterministic(
@@ -157,6 +163,7 @@ class ContextEngine(BaseEngine, IContextEngine):
             "organization_id": context_ref.organization_id,
             "domain_id": context_ref.domain_id,
             "case_id": context_ref.case_id,
+            "scope_id": context_ref.case_id,
             "user_id": context_ref.user_id,
             "status": context_ref.resolution_status.value,
             "resolution_status": context_ref.resolution_status.value,
@@ -218,7 +225,7 @@ class ContextEngine(BaseEngine, IContextEngine):
             )
 
         if has_org and not has_case:
-            ambiguities.append("Missing required case_id for case-level boundary enforcement.")
+            ambiguities.append("Missing required case_id / scope_id for boundary enforcement.")
             scope_constraints.append(f"organization_id={org_id}")
             return ContextRef(
                 organization_id=org_id,

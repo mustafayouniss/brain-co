@@ -188,3 +188,29 @@ Mounted at `/api/v1/ring1` (protected by `get_test_operator_user` in `deps.py`):
 - **Plan Storage Scope**:
   - Session/runtime scoped in `PlanningEngine._plans` (in-memory dictionary per process).
   - Explicitly ephemeral across restarts; relational PostgreSQL persistence is deferred to Ring 2.
+
+### Ring 1 General Brain API Contracts (Section 17)
+- `GET /api/v1/brain/status`: Health check, active cognitive engines (Perception, Observation, Context, Memory, Retrieval, Planning), registered capabilities, and registered domain extensions.
+- `POST /api/v1/observations`: Persists normalized observation event to `ring1_observations` with SHA-256 idempotency, records append-only `AuditEvent`, and broadcasts to authorized WebSocket subscribers.
+- `GET /api/v1/observations`: Retrieves cursor-paginated observation feed with cryptographic HMAC-SHA256 Base64URL cursor integrity, strictly filtered by tenant and scope.
+- `POST /api/v1/context/resolve`: Server-side context boundary resolution evaluating domain, organization, and scope references. Returns resolution status, ambiguities, and scope constraints.
+- `GET /api/v1/memory/{id}`: Retrieves authorized knowledge object from `ring1_memory_records`. Enforces strict organization and scope boundaries, returning sanitized 404s on unauthorized access to prevent existence oracles.
+- `GET /api/v1/retrieval/search`: Context-first lexical keyword retrieval. Enforces tenant and scope filters at the database boundary before candidate scoring and ranking. Strictly excludes unvalidated candidates.
+- `WS /api/v1/ws/observations`: Real-time observation update stream. Authenticates clients via JWT token, enforces organization broadcast boundaries, and handles disconnects cleanly.
+
+### Short-Term Memory Architecture (Section 11.1)
+- `backend/app/core/short_term_memory.py` (`ShortTermMemoryService`):
+  - Ephemeral task execution state caching (current plan, intermediate execution data, step state).
+  - Standard key format: `org:{organization_id}:task:{task_id}:{key}`.
+  - TTL expiration (default 3600 seconds).
+  - Redis backend with automatic in-memory thread-safe TTL fallback.
+  - PostgreSQL remains the authoritative task and execution state ledger.
+
+### Domain Extension Architecture (Section 2.1)
+- `backend/app/domains/` (`IDomainExtension`, `DomainRegistry`):
+  - Decouples industry-specific intelligence from the General Brain.
+  - `LegalDomainExtension`: Egyptian Civil Law extraction and contract analysis.
+  - `SalesDomainExtension`: Enterprise sales deal signals and opportunity extraction.
+  - `LogisticsFleetDomainExtension`: Maritime vessel manifest and cargo inspection tracking.
+  - All 5 core engines operate with 100% domain independence without internal code changes.
+

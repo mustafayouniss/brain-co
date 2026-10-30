@@ -29,6 +29,8 @@ class Source(Base):
         ),
         Index("ix_sources_checksum_sha256", "checksum_sha256"),
         Index("ix_sources_uploaded_by", "uploaded_by"),
+        Index("ix_sources_case_id", "case_id"),
+        Index("ix_sources_organization_id", "organization_id"),
         Index("ix_sources_created_at", "created_at"),
     )
 
@@ -36,6 +38,14 @@ class Source(Base):
         UUID(as_uuid=True),
         primary_key=True,
         server_default=text("gen_random_uuid()"),
+    )
+    case_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    organization_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
     )
     original_filename: Mapped[str] = mapped_column(
         String(500),
