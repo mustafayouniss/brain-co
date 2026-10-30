@@ -210,14 +210,16 @@ class PlanningEngine(BaseEngine):
         actual_result = request.payload.get("actual_result")
         evidence = request.payload.get("evidence") or {}
 
-        # Mark superseded failed step and track retained completed steps
+        # Retain history: keep failed step marked as FAILED with explicit failure reason
         retained_step_ids = []
         skipped_step_ids = []
+        failed_step_obj = None
         for step in plan.steps:
             if step.step_id == failed_step_id:
-                step.status = StepStatus.SKIPPED
+                failed_step_obj = step
+                step.status = StepStatus.FAILED
                 step.actual_result = actual_result
-                skipped_step_ids.append(step.step_id)
+                step.failure_reason = f"Execution failed: {reason_code.value}"
             elif step.status == StepStatus.COMPLETED:
                 retained_step_ids.append(step.step_id)
 
@@ -231,11 +233,31 @@ class PlanningEngine(BaseEngine):
             evidence=evidence,
         )
 
-        # Append recovery steps to plan
-        max_order = max((s.order for s in plan.steps), default=0)
-        for idx, step in enumerate(recovery_steps, start=max_order + 1):
+        # Link recovery step dependencies:
+        # The first recovery step inherits the failed step's dependencies
+        if recovery_steps and failed_step_obj:
+            recovery_steps[0].depends_on = list(failed_step_obj.depends_on)
+            for i in range(1, len(recovery_steps)):
+                recovery_steps[i].depends_on = [recovery_steps[i - 1].step_id]
+
+            last_rec_id = recovery_steps[-1].step_id
+
+            # Downstream pending/blocked steps that depended on the failed step
+            # now depend on the recovery step, unblocking the entire downstream chain for revised execution
+            for step in plan.steps:
+                if step.status in (StepStatus.PENDING, StepStatus.BLOCKED):
+                    if failed_step_id in step.depends_on:
+                        step.depends_on = [last_rec_id if d == failed_step_id else d for d in step.depends_on]
+                    step.status = StepStatus.PENDING
+
+        # Reorder steps: completed/failed steps, then recovery steps, then pending downstream steps
+        past_steps = [s for s in plan.steps if s.status in (StepStatus.COMPLETED, StepStatus.FAILED, StepStatus.SKIPPED)]
+        future_steps = [s for s in plan.steps if s not in past_steps]
+
+        new_step_list = past_steps + recovery_steps + future_steps
+        for idx, step in enumerate(new_step_list, start=1):
             step.order = idx
-            plan.steps.append(step)
+        plan.steps = new_step_list
 
         replan_response = ReplanResponse(
             plan_id=plan.plan_id,
@@ -334,37 +356,67 @@ class PlanningEngine(BaseEngine):
         return self._default_plan_steps(goal)
 
     def _default_plan_steps(self, goal: str) -> list[PlanStep]:
-        """Deterministic fallback: standard 3-step pipeline."""
-        return [
-            PlanStep(
+        """Deterministic fallback: pipeline with explicit dependencies."""
+        if any(w in goal.lower() for w in ("pdf", "document", "ingest", "knowledge")):
+            step1 = PlanStep(
                 order=1,
-                capability=PERCEPTION_STRUCTURE_INPUT,
-                description="Structure and normalize initial goal and context inputs.",
-                expected_output="Structured representation of task input.",
-                status=StepStatus.PENDING,
-            ),
-            PlanStep(
-                order=2,
                 capability=CONTEXT_RESOLVE,
-                description="Resolve contextual boundaries and permissions.",
-                expected_output="Resolved ContextRef with valid case_id.",
+                description="Validate and establish authorized case context for document ingestion.",
+                expected_output="Resolved ContextRef with valid organization_id and case_id.",
                 status=StepStatus.PENDING,
-            ),
-            PlanStep(
+                depends_on=[],
+            )
+            step2 = PlanStep(
+                order=2,
+                capability=MEMORY_STORE_RECORD,
+                description="Persist validated document structured knowledge and facts to case memory.",
+                expected_output="Record IDs of persisted case knowledge.",
+                status=StepStatus.PENDING,
+                depends_on=[step1.step_id],
+            )
+            step3 = PlanStep(
                 order=3,
                 capability=RETRIEVAL_QUERY,
-                description="Retrieve relevant case records or evidence.",
-                expected_output="Relevant contextual records.",
+                description="Perform verification search in case memory to confirm facts were durably stored.",
+                expected_output="Retrieved knowledge records matching document facts.",
                 status=StepStatus.PENDING,
-            ),
-            PlanStep(
-                order=4,
-                capability=MEMORY_STORE_RECORD,
-                description="Persist task results to memory.",
-                expected_output="Record ID of saved result.",
-                status=StepStatus.PENDING,
-            ),
-        ]
+                depends_on=[step2.step_id],
+            )
+            return [step1, step2, step3]
+
+        step1 = PlanStep(
+            order=1,
+            capability=PERCEPTION_STRUCTURE_INPUT,
+            description="Structure and normalize initial goal and context inputs.",
+            expected_output="Structured representation of task input.",
+            status=StepStatus.PENDING,
+            depends_on=[],
+        )
+        step2 = PlanStep(
+            order=2,
+            capability=CONTEXT_RESOLVE,
+            description="Resolve contextual boundaries and permissions.",
+            expected_output="Resolved ContextRef with valid case_id.",
+            status=StepStatus.PENDING,
+            depends_on=[step1.step_id],
+        )
+        step3 = PlanStep(
+            order=3,
+            capability=RETRIEVAL_QUERY,
+            description="Retrieve relevant case records or evidence.",
+            expected_output="Relevant contextual records.",
+            status=StepStatus.PENDING,
+            depends_on=[step2.step_id],
+        )
+        step4 = PlanStep(
+            order=4,
+            capability=MEMORY_STORE_RECORD,
+            description="Persist task results to memory.",
+            expected_output="Record ID of saved result.",
+            status=StepStatus.PENDING,
+            depends_on=[step3.step_id],
+        )
+        return [step1, step2, step3, step4]
 
     def _build_recovery_steps(
         self,

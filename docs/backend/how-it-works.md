@@ -169,3 +169,18 @@ Previously, checklist steps were marked "done" on paper without actually running
 - It waits for the specialist to complete the real work and only marks the checklist item "COMPLETED" when real results are delivered.
 - If a specialist runs into an error, the executor records the exact error details and failure evidence, halts forward execution, and asks Planning to revise the remaining checklist based on what actually went wrong.
 - The Planning specialist retains everything already completed, skips the failed item, and inserts tailored recovery actions (like retrieving relevant precedents or clarifying missing case details) instead of repeatedly guessing.
+
+### The Real PDF-to-Knowledge Pipeline
+Instead of feeding fake or simulated documents, the system now accepts real multi-page PDF documents:
+1. **The PDF Inspector (`PDFExtractor`)**: Validates that the file is genuinely a PDF starting with `%PDF-` bytes and under the 20MB limit. It unpacks the file page-by-page, detects whether the document is scanned or text-based, and attaches 1-indexed page provenance to every chunk.
+2. **The Knowledge Distiller (`StructuredKnowledgeExtractor`)**: Scans the extracted text for Egyptian legal statutes (such as Egyptian Civil Code Article 147), parties, dates, financial retainers, and contractual obligations. Every fact is saved with its exact page number and text excerpt.
+3. **The 9-Step Capability Flow**:
+   - **Step 1 (Perception)**: Normalizes document content into structured input envelopes.
+   - **Step 2 (Observation)**: Durably records the ingestion event into PostgreSQL (`ring1_observations`) with a SHA-256 fingerprint so identical documents cannot produce duplicate rows.
+   - **Step 3 (Context)**: Verifies the legal case and organization boundaries, enforcing server-side authorization.
+   - **Step 4 (Planning)**: Generates a 3-step checklist with explicit dependencies: `context.resolve` → `memory.store_record` → `retrieval.query`.
+   - **Step 5 (Prerequisite Checking)**: Before any step runs, `PlanStepExecutor` verifies that its required prerequisite actually succeeded. If Step 1 fails, Step 2 and Step 3 are immediately marked `BLOCKED`, preventing unauthorized or ungrounded writes.
+   - **Step 6 (Bounded Replanning)**: If a step fails, the system does not silently bypass it. Instead, Planning reviews the failure evidence and issues a revised Version 2 plan with explicit recovery actions.
+   - **Step 7 (Memory Persistence)**: Stores validated facts into PostgreSQL (`ring1_memory_records`), strictly isolated by `case_id`.
+   - **Step 8 (Verification Retrieval)**: Issues an independent search query against PostgreSQL to prove the facts can actually be retrieved.
+   - **Step 9 (Scorecard)**: Emits a final scorecard reporting pages processed, candidate facts, persisted facts, and verified retrieval count.

@@ -24,13 +24,16 @@ Every folder in the repository and its single-line designated purpose:
   - `contracts/`: Typed versioned envelopes (`envelopes.py`), capability definitions (`capabilities.py`), context boundaries (`context_ref.py`), error models (`errors.py`), and planning lifecycle models (`plan_models.py`).
   - `mesh/`: In-process peer capability router (`router.py`) enforcing delegation depth and tracing.
   - `engines/`: Six cooperating engine implementations (`base.py`, `perception.py`, `observation.py`, `context.py`, `memory.py`, `retrieval.py`, `planning.py`).
+  - `execution/`: Plan step execution runtime (`executor.py`) enforcing sequential step dependencies, prerequisite validation, and runtime fault injection.
+  - `pdf/`: Pure-Python PDF parsing and structured knowledge extraction (`extractor.py`, `schemas.py`, `structured.py`).
   - `models/`: Ring 1 persistence models (`Observation`, `MemoryRecord` in `observation.py`).
+  - `service.py`: Real-time test orchestration service (`Ring1TestRunner`, `execute_pdf`, `execute`, `query_saved_knowledge`, in-memory `test_run_registry`).
 - `backend/app/schemas/`: Pydantic v2 data models for input validation, request parsing, and response serialization.
 - `backend/app/services/`: Reusable domain business logic and data processing operations decoupled from API endpoints.
 - `backend/migrations/`: Alembic database schema migration environment and runners.
 - `backend/migrations/versions/`: Individual revision scripts representing historical database schema transformations (`f19a0a1b2c3d_create_ring1_tables.py`).
 - `backend/tests/`: Automated pytest test suites covering unit, integration, and endpoint behaviors with isolated test DB fixtures.
-- `backend/tests/ring1/`: Dedicated test suite for Ring 1 mesh, contracts, all 6 engines, and strict case isolation (34 tests).
+- `backend/tests/ring1/`: Dedicated test suite for Ring 1 mesh, contracts, all 6 engines, adversarial security, PDF extraction, and end-to-end pipeline (59 tests).
 
 - `ai/`: Reusable, provider-agnostic AI Engine package in Python 3.12.
 - `ai/core/`: Interfaces (`provider.py`), normalized Pydantic types (`request.py`, `response.py`, `error.py`), and orchestration services (`llm_service.py`).

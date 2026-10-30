@@ -52,6 +52,7 @@ class EngineErrorCode(str, Enum):
     REPLAN_LIMIT_EXCEEDED = "replan_limit_exceeded"
     TERMINAL_FAILURE = "terminal_failure"
     CLARIFICATION_REQUIRED = "clarification_required"
+    MISSING_PREREQUISITE = "missing_prerequisite"
 
     # General
     INTERNAL_ERROR = "internal_error"

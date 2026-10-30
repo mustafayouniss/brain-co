@@ -279,13 +279,16 @@ class ObservationEngine(BaseEngine):
             if request.context_ref
             else None
         )
-        case_id = request.payload.get("case_id") or (
-            request.context_ref.case_id if hasattr(request.context_ref, "case_id") else None
+        ctx = request.context_ref
+        case_id = (
+            getattr(ctx, "case_id", None)
+            if ctx is not None
+            else request.payload.get("case_id")
         )
-        organization_id = request.payload.get("organization_id") or (
-            request.context_ref.organization_id
-            if hasattr(request.context_ref, "organization_id")
-            else None
+        organization_id = (
+            getattr(ctx, "organization_id", None)
+            if ctx is not None
+            else request.payload.get("organization_id")
         )
 
         if self._db_session_factory:

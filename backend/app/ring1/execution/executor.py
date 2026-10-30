@@ -93,10 +93,68 @@ class PlanStepExecutor:
             )
             return error_resp, StepStatus.FAILED
 
-        # 2. Derive request payload based on step capability and plan context
+        # 2. Prerequisite validation (depends_on)
+        for dep_id in step.depends_on:
+            dep_step = next((s for s in plan.steps if s.step_id == dep_id), None)
+            if dep_step is None:
+                step.status = StepStatus.BLOCKED
+                err_msg = f"Prerequisite step '{dep_id}' was not found in plan."
+                step.actual_result = {
+                    "error": err_msg,
+                    "code": EngineErrorCode.MISSING_PREREQUISITE.value,
+                }
+                error_resp = MeshResponse.failure(
+                    request=MeshRequest(
+                        sender_engine="plan_executor",
+                        recipient_capability=step.capability,
+                        payload={},
+                    ),
+                    sender_engine="plan_executor",
+                    status=ResultStatus.FAILED,
+                    errors=[
+                        {
+                            "code": EngineErrorCode.MISSING_PREREQUISITE.value,
+                            "message": err_msg,
+                            "engine": "plan_executor",
+                        }
+                    ],
+                )
+                return error_resp, StepStatus.BLOCKED
+
+            if dep_step.status != StepStatus.COMPLETED:
+                step.status = StepStatus.BLOCKED
+                err_msg = (
+                    f"Prerequisite step '{dep_id}' ({dep_step.capability}) is not completed "
+                    f"(current status: {dep_step.status.value})."
+                )
+                step.actual_result = {
+                    "error": err_msg,
+                    "code": EngineErrorCode.MISSING_PREREQUISITE.value,
+                    "dependency_step_id": dep_id,
+                    "dependency_status": dep_step.status.value,
+                }
+                error_resp = MeshResponse.failure(
+                    request=MeshRequest(
+                        sender_engine="plan_executor",
+                        recipient_capability=step.capability,
+                        payload={},
+                    ),
+                    sender_engine="plan_executor",
+                    status=ResultStatus.FAILED,
+                    errors=[
+                        {
+                            "code": EngineErrorCode.MISSING_PREREQUISITE.value,
+                            "message": err_msg,
+                            "engine": "plan_executor",
+                        }
+                    ],
+                )
+                return error_resp, StepStatus.BLOCKED
+
+        # 3. Derive request payload based on step capability and plan context
         step_payload = self._build_step_payload(plan, step, context_ref, custom_payload)
 
-        # 3. Construct typed request
+        # 4. Construct typed request
         request = MeshRequest(
             task_id=plan.task_id,
             plan_version=plan.version,
@@ -107,17 +165,17 @@ class PlanStepExecutor:
             constraints=DelegationConstraints(max_delegations_remaining=3),
         )
 
-        # 4. Controlled test fault injection at the execution boundary
+        # 5. Controlled test fault injection at the execution boundary
         if self.fault_injector is not None:
             injected_req = self.fault_injector(step, request)
             if injected_req is not None:
                 request = injected_req
 
-        # 5. Dispatch via real MeshRouter
+        # 6. Dispatch via real MeshRouter
         step.status = StepStatus.IN_PROGRESS
         response = await self.router.dispatch(request)
 
-        # 6. Evaluate genuine runtime outcome
+        # 7. Evaluate genuine runtime outcome
         if response.status == ResultStatus.SUCCESS:
             step.status = StepStatus.COMPLETED
             step.actual_result = response.payload
@@ -135,6 +193,7 @@ class PlanStepExecutor:
         plan: Plan,
         context_ref: Optional[ContextRef] = None,
         max_steps: Optional[int] = None,
+        step_payloads: Optional[dict[str, dict[str, Any]]] = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Execute all remaining pending steps in a plan, yielding execution events."""
         plan.status = PlanStatus.ACTIVE
@@ -156,10 +215,14 @@ class PlanStepExecutor:
                 }
                 continue
 
-            if step.status in (StepStatus.FAILED, StepStatus.SKIPPED):
+            if step.status in (StepStatus.FAILED, StepStatus.SKIPPED, StepStatus.BLOCKED):
                 continue
 
             # Execute pending step
+            custom_payload = None
+            if step_payloads:
+                custom_payload = step_payloads.get(step.step_id) or step_payloads.get(step.capability)
+
             t0 = time.perf_counter()
             yield {
                 "event_type": "step_started",
@@ -170,7 +233,7 @@ class PlanStepExecutor:
                 "plan_version": plan.version,
             }
 
-            resp, final_status = await self.execute_step(plan, step, context_ref)
+            resp, final_status = await self.execute_step(plan, step, context_ref, custom_payload=custom_payload)
             duration_ms = round((time.perf_counter() - t0) * 1000, 2)
             steps_executed += 1
 
@@ -186,6 +249,20 @@ class PlanStepExecutor:
                     "result": step.actual_result,
                     "response_envelope": resp.model_dump(mode="json"),
                 }
+            elif final_status == StepStatus.BLOCKED:
+                yield {
+                    "event_type": "step_blocked",
+                    "step_id": step.step_id,
+                    "order": step.order,
+                    "capability": step.capability,
+                    "status": "blocked",
+                    "duration_ms": duration_ms,
+                    "plan_version": plan.version,
+                    "result": step.actual_result,
+                    "response_envelope": resp.model_dump(mode="json"),
+                }
+                # Blocked prerequisite halts execution
+                break
             else:
                 yield {
                     "event_type": "step_failed",
@@ -198,12 +275,35 @@ class PlanStepExecutor:
                     "result": step.actual_result,
                     "response_envelope": resp.model_dump(mode="json"),
                 }
+                # Block downstream dependent steps
+                for downstream in plan.steps:
+                    if step.step_id in downstream.depends_on and downstream.status == StepStatus.PENDING:
+                        downstream.status = StepStatus.BLOCKED
+                        downstream.actual_result = {
+                            "error": f"Blocked because prerequisite '{step.step_id}' ({step.capability}) failed.",
+                            "code": EngineErrorCode.MISSING_PREREQUISITE.value,
+                        }
+                        yield {
+                            "event_type": "step_blocked",
+                            "step_id": downstream.step_id,
+                            "order": downstream.order,
+                            "capability": downstream.capability,
+                            "status": "blocked",
+                            "plan_version": plan.version,
+                            "result": downstream.actual_result,
+                        }
                 if not plan.can_replan():
                     plan.status = PlanStatus.FAILED
                 break
 
-        # Check if all active non-skipped steps completed
-        if plan.steps and all(s.status in (StepStatus.COMPLETED, StepStatus.SKIPPED) for s in plan.steps):
+        # Check if all active steps completed
+        # Steps that failed in an earlier version are considered resolved if superseded by a completed recovery step
+        unresolved_steps = [
+            s for s in plan.steps
+            if s.status not in (StepStatus.COMPLETED, StepStatus.SKIPPED)
+            and not (s.status == StepStatus.FAILED and any(rec.order > s.order and rec.status == StepStatus.COMPLETED for rec in plan.steps))
+        ]
+        if plan.steps and not unresolved_steps:
             plan.status = PlanStatus.COMPLETED
 
     def _build_step_payload(

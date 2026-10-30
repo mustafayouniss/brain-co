@@ -86,22 +86,48 @@ class BasicRetrievalEngine(BaseEngine):
         if validation_err:
             return validation_err
 
-        # Context boundary check: query MUST have a context_ref or explicit case_id
+        # Context boundary check: query MUST have a valid context_ref with case_id and organization_id
         context_err = self.require_context_ref(request)
         if context_err:
             return context_err
 
         context_ref = request.context_ref
-        case_id = request.payload.get("case_id") or (
-            context_ref.case_id if context_ref else None
-        )
-
-        if not case_id:
+        if not context_ref or not (context_ref.case_id or "").strip():
             return self._error(
                 request,
                 ResultStatus.NEEDS_CLARIFICATION,
                 EngineErrorCode.CONTEXT_MISSING,
-                "A resolved case_id is required for retrieval to enforce data isolation.",
+                "A valid context_ref with non-empty case_id is required for retrieval to enforce data isolation.",
+            )
+
+        if not (context_ref.organization_id or "").strip():
+            return self._error(
+                request,
+                ResultStatus.NEEDS_CLARIFICATION,
+                EngineErrorCode.CONTEXT_MISSING,
+                "A valid context_ref with non-empty organization_id is required for retrieval to enforce data isolation.",
+            )
+
+        authorized_case_id = context_ref.case_id.strip()
+        authorized_org_id = context_ref.organization_id.strip()
+
+        # Reject payload ID spoofing
+        payload_case_id = request.payload.get("case_id")
+        if payload_case_id and str(payload_case_id).strip() != authorized_case_id:
+            return self._error(
+                request,
+                ResultStatus.FAILED,
+                EngineErrorCode.AUTHORIZATION_DENIED,
+                "Access denied: payload case_id does not match authorized context.",
+            )
+
+        payload_org_id = request.payload.get("organization_id")
+        if payload_org_id and str(payload_org_id).strip() != authorized_org_id:
+            return self._error(
+                request,
+                ResultStatus.FAILED,
+                EngineErrorCode.AUTHORIZATION_DENIED,
+                "Access denied: payload organization_id does not match authorized context.",
             )
 
         query_text = (request.payload.get("query") or "").strip()
@@ -119,7 +145,8 @@ class BasicRetrievalEngine(BaseEngine):
         if self._db_session_factory is not None:
             return await self._query_db(
                 request=request,
-                case_id=case_id,
+                case_id=authorized_case_id,
+                organization_id=authorized_org_id,
                 keywords=keywords,
                 record_type=record_type,
                 limit=limit,
@@ -128,7 +155,8 @@ class BasicRetrievalEngine(BaseEngine):
         else:
             return self._query_in_memory(
                 request=request,
-                case_id=case_id,
+                case_id=authorized_case_id,
+                organization_id=authorized_org_id,
                 keywords=keywords,
                 record_type=record_type,
                 limit=limit,
@@ -143,6 +171,7 @@ class BasicRetrievalEngine(BaseEngine):
         self,
         request: MeshRequest,
         case_id: str,
+        organization_id: str,
         keywords: list[str],
         record_type: Optional[str],
         limit: int,
@@ -150,8 +179,13 @@ class BasicRetrievalEngine(BaseEngine):
     ) -> MeshResponse:
         session: Session = self._db_session_factory()
         try:
-            # Strictly filter by case_id
+            # Strictly filter by case_id and organization_id
             stmt = select(MemoryRecord).where(MemoryRecord.case_id == case_id)
+            if organization_id:
+                stmt = stmt.where(
+                    (MemoryRecord.organization_id == organization_id)
+                    | (MemoryRecord.organization_id.is_(None))
+                )
 
             if record_type:
                 stmt = stmt.where(MemoryRecord.record_type == record_type)
@@ -161,8 +195,10 @@ class BasicRetrievalEngine(BaseEngine):
 
             results = []
             for rec in all_records:
-                # Strictly reject any record from another case (defense in depth)
+                # Strictly reject any record from another case or foreign organization (defense in depth)
                 if rec.case_id != case_id:
+                    continue
+                if rec.organization_id and organization_id and rec.organization_id != organization_id:
                     continue
 
                 if keywords and any(k for k in keywords if k):
@@ -215,6 +251,7 @@ class BasicRetrievalEngine(BaseEngine):
         self,
         request: MeshRequest,
         case_id: str,
+        organization_id: str,
         keywords: list[str],
         record_type: Optional[str],
         limit: int,
@@ -227,8 +264,10 @@ class BasicRetrievalEngine(BaseEngine):
 
         matched = []
         for rec in candidates:
-            # Strict case isolation
+            # Strict case and organization isolation
             if rec.get("case_id") != case_id:
+                continue
+            if rec.get("organization_id") and organization_id and rec.get("organization_id") != organization_id:
                 continue
 
             if record_type and rec.get("record_type") != record_type:

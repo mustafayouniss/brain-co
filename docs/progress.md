@@ -1,6 +1,19 @@
 # Progress
 
 ## Done
+- **Ring 1 Full Remediation, Real PDF Ingestion Pipeline, and Live Test Console**:
+  - Remediated P0 security & context isolation in `BasicMemoryEngine` and `BasicRetrievalEngine` (enforced typed `ContextRef`, rejected payload ID spoofing, sanitized errors eliminating existence oracles).
+  - Remediation of exposed API secrets: removed key snippet in documentation, configured safe `.env.example`, documented rotation requirement.
+  - Implemented prerequisite validation (`depends_on`) and causal failure blocking in `PlanStepExecutor`.
+  - Upgraded `PlanningEngine` with goal-aware plan step generation and bounded evidence-based replanning.
+  - Built pure-Python PDF ingestion module (`app/ring1/pdf/`): `PDFExtractor` (page-by-page text, magic bytes signature validation, size limit, encrypted/scanned document detection) and `StructuredKnowledgeExtractor` (Egyptian legal articles, facts, dates, entities, obligations with page provenance).
+  - Connected PDF ingestion to the 6 Ring 1 mesh engines in `Ring1TestRunner.execute_pdf` (PostgreSQL observation and memory persistence with SHA-256 idempotency).
+  - Implemented test-only deterministic fault injection for context boundary failure demonstrating truthful prerequisite blocking, replanning, and recovery.
+  - Added FastAPI endpoints `POST /api/v1/ring1/upload-pdf` (SSE streaming) and `GET /api/v1/ring1/knowledge`.
+  - Added Next.js proxy routes `/api/ring1/upload-pdf` and `/api/ring1/knowledge`.
+  - Upgraded Ring 1 Test Console with PDF drag-and-drop, Live Trace, Plan Versions, and Extracted Knowledge Tab.
+  - Authored 25 new tests: 12 adversarial security tests, 7 PDF extractor tests, 6 end-to-end pipeline tests (261/261 backend/AI tests passing).
+  - Frontend TypeScript typecheck passes with 0 errors; Next.js production build passes (32/32 routes compiled).
 - Moved all backend documentation into `docs/backend/`.
 - Deleted outdated copies from root `docs/`.
 - Implemented Foundational Source Ingestion Pipeline in `data-engineering/orgbrain_ingest/` (validation, SHA-256 fingerprinting, raw storage abstraction, LocalStorageBackend, orchestration pipeline).

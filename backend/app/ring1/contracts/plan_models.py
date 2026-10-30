@@ -72,6 +72,8 @@ class PlanStep(BaseModel):
     actual_result: Optional[dict[str, Any]] = None
     is_idempotent: bool = False
     is_safe_to_retry: bool = False
+    failure_reason: Optional[str] = None
+    skip_reason: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

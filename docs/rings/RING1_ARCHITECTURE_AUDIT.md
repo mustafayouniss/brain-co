@@ -253,7 +253,7 @@ LEAKED_PAYLOAD: {'record_id': '...', 'case_id': 'case-confidential', 'payload': 
 **Location**: `docs/rings/ring1-master-comprehensive-report.md:238`  
 **Evidence**:
 Grep search confirmed line 238 contains the raw secret string:
-`GEMINI_API_KEY=AQ.Ab8RN6...[REDACTED]`
+`GEMINI_API_KEY=<REDACTED_SECRET>`
 
 **Impact**: Anyone with repository access or Git clone access can extract and use this API key.  
 **Recommended Action**:

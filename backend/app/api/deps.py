@@ -147,6 +147,35 @@ def require_admin(
     return current_user
 
 
+def get_test_operator_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Allow test execution in development/test environment, or require admin in production.
+
+    In production: strict authentication + admin role is required.
+    In dev/test environments: allows authenticated operators or local developer access.
+    """
+    from app.core.config import settings
+
+    if credentials is not None:
+        try:
+            payload = decode_access_token(credentials.credentials)
+            sub = payload.get("sub", "")
+            user_id = uuid.UUID(sub)
+            user: User | None = db.get(User, user_id)
+            if user is not None and user.is_active:
+                if user.role == "admin" or settings.ENVIRONMENT.lower() != "production":
+                    return user
+        except Exception:
+            pass
+
+    if settings.ENVIRONMENT.lower() != "production":
+        return None
+
+    raise _AUTH_401
+
+
 # ---------------------------------------------------------------------------
 # LLM service dependency
 # ---------------------------------------------------------------------------
