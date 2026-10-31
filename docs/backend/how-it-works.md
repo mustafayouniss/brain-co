@@ -139,3 +139,116 @@ cd backend
 - **What it does**: Starts the local FastAPI development server on port 8000.
 - **When to use**: When testing API endpoints locally. You can visit `http://127.0.0.1:8000/health` or `http://127.0.0.1:8000/api/v1/health/db` in your browser or client tool.
 
+---
+
+## 3. Ring 1 General Brain Mesh: How It Works
+
+### The Analogy: A Team of Specialists Without a Dictator Boss
+Imagine a legal operations room with 6 specialists sitting at a round table:
+1. **Perception Specialist**: Takes in raw letters, emails, or system pings, reads them, and translates them into organized summary folders.
+2. **Observation Specialist**: Notes when events happen, files them neatly, detects if an event was already logged, and decides whether it needs follow-up work.
+3. **Context Specialist**: Checks which legal case and organization an action belongs to. If someone brings a document without a case number, they stop and ask for clarification rather than guessing.
+4. **Memory Specialist**: Keeps the confidential file cabinets. When someone wants to save or read a record, they verify that the person is asking for files inside the correct case cabinet.
+5. **Retrieval Specialist**: Answers questions by searching through the memory cabinets, strictly making sure they never pull a file from Case A when answering a question about Case B.
+6. **Planning Specialist**: Breaks down big objectives into a sequenced checklist of steps using the tools that the other specialists provide, and if a step fails, boundedly revises the checklist without looping forever.
+
+### The Mesh Router (The Courier)
+Instead of having a single monolithic "boss" that controls every micro-action, all specialists communicate through a lightweight courier called the **Mesh Router**. Every message travels in a secure envelope (`MeshRequest` / `MeshResponse`) that carries the task ID, trace ID, context boundaries, and a delegation countdown so loops are mathematically impossible.
+
+### The Live Test Console (The Glass Control Room)
+To visually watch this team of 6 specialists work together in real-time, we built a floating console on the frontend called **Ring 1 Live Test**.
+- **The Analogy**: Like a glass observation window overlooking the operations room. When you press "Run Integration Test", you see the courier carry envelopes from desk to desk in real time.
+- **The Live Trace**: A chronological ledger showing every envelope sent, received, and completed.
+- **The Delegation Graph**: A visual map with glowing lines that light up only when specialists pass work to each other.
+- **The Plan Version Inspector**: Shows how the Planning specialist creates an initial checklist (Version 1), preserves finished steps when a snag occurs (like missing context), and writes a revised checklist (Version 2) without starting over from scratch.
+
+### The Plan Step Executor (The Checklist Runner)
+Previously, checklist steps were marked "done" on paper without actually running them. Now, we have a dedicated **Plan Step Executor**:
+- It takes each item on the checklist one by one.
+- It finds the right specialist through the courier (Mesh Router) and hands them the task in a secure envelope.
+- It waits for the specialist to complete the real work and only marks the checklist item "COMPLETED" when real results are delivered.
+- If a specialist runs into an error, the executor records the exact error details and failure evidence, halts forward execution, and asks Planning to revise the remaining checklist based on what actually went wrong.
+- The Planning specialist retains everything already completed, skips the failed item, and inserts tailored recovery actions (like retrieving relevant precedents or clarifying missing case details) instead of repeatedly guessing.
+
+### The Real PDF-to-Knowledge Pipeline
+Instead of feeding fake or simulated documents, the system now accepts real multi-page PDF documents:
+1. **The PDF Inspector (`PDFExtractor`)**: Validates that the file is genuinely a PDF starting with `%PDF-` bytes and under the 20MB limit. It unpacks the file page-by-page, detects whether the document is scanned or text-based, and attaches 1-indexed page provenance to every chunk.
+2. **The Knowledge Distiller (`StructuredKnowledgeExtractor`)**: Scans the extracted text for Egyptian legal statutes (such as Egyptian Civil Code Article 147), parties, dates, financial retainers, and contractual obligations. Every fact is saved with its exact page number and text excerpt.
+3. **The 9-Step Capability Flow**:
+   - **Step 1 (Perception)**: Normalizes document content into structured input envelopes.
+   - **Step 2 (Observation)**: Durably records the ingestion event into PostgreSQL (`ring1_observations`) with a SHA-256 fingerprint so identical documents cannot produce duplicate rows.
+   - **Step 3 (Context)**: Verifies the legal case and organization boundaries, enforcing server-side authorization.
+   - **Step 4 (Planning)**: Generates a 3-step checklist with explicit dependencies: `context.resolve` → `memory.store_record` → `retrieval.query`.
+   - **Step 5 (Prerequisite Checking)**: Before any step runs, `PlanStepExecutor` verifies that its required prerequisite actually succeeded. If Step 1 fails, Step 2 and Step 3 are immediately marked `BLOCKED`, preventing unauthorized or ungrounded writes.
+   - **Step 6 (Bounded Replanning)**: If a step fails, the system does not silently bypass it. Instead, Planning reviews the failure evidence and issues a revised Version 2 plan with explicit recovery actions.
+   - **Step 7 (Memory Persistence)**: Stores validated facts into PostgreSQL (`ring1_memory_records`), strictly isolated by `case_id`.
+   - **Step 8 (Verification Retrieval)**: Issues an independent search query against PostgreSQL to prove the facts can actually be retrieved.
+   - **Step 9 (Scorecard)**: Emits a final scorecard reporting pages processed, candidate facts, persisted facts, and verified retrieval count.
+
+---
+
+## The Durable Execution Foundation (PostgreSQL Task Ledger & Outbox)
+
+### The Authoritative State Ledger
+Instead of tracking active tasks in Python memory dictionaries (which vanish if the server restarts), every task lives in a durable PostgreSQL table called `tasks`.
+- A task moves through strict, atomic state gates: `PENDING` → `QUEUED` → `RUNNING` → `SUCCEEDED` / `FAILED` / `DEAD_LETTER`.
+- When an API receives a request to start a task, it writes both the `Task` and an entry in `task_outbox` in the exact same database transaction. If the database crashes mid-way, either both are saved or neither is saved. There is zero chance of a task being lost or half-created.
+
+### The Outbox Dispatcher (The Reliable Mailroom)
+Redis and background workers are treated as fast delivery messengers, not permanent records of truth.
+- The mailroom (`OutboxDispatcher`) locks pending tasks safely using `FOR UPDATE SKIP LOCKED`.
+- It stamps each package with an incremented `dispatch_generation` and gives itself a bounded lease window.
+- It changes the task state to `QUEUED` before enqueueing to Redis.
+- If a delivery messenger crashes, the abandoned lease expires and the sweeper picks it up for redelivery without ever dropping tasks.
+
+### Generation Fencing (Preventing Zombie Workers)
+In distributed systems, a worker can become slow, unresponsive, or disconnected (a "zombie"). If the system assumes the worker died and assigns the task to someone else, the zombie might wake up later and try to write outdated results.
+- Every task has a `lease_generation` number.
+- Whenever a worker claims a task, the generation increments.
+- All database writes (recording facts, updating state, logging audit events) verify the current generation inside the write transaction.
+- If a zombie worker wakes up and tries to commit work with an expired generation, PostgreSQL immediately rejects it. Outdated work can never overwrite newer truth.
+
+### Human Validation Authority over Knowledge Candidates
+AI models and automated workers can suggest new facts, but they cannot declare them to be verified truth.
+- When an automated worker extracts facts, they are tagged with lifecycle state `candidate`.
+- A candidate can never promote itself to validated knowledge.
+- Only a verified human actor with `validation_authority = True` can promote a candidate to `validated` status, preserving complete human oversight over organizational knowledge.
+
+### Cryptographic HMAC Pagination Cursors
+When browsing through long lists of observations or records, pages must not leak confidential files or let attackers tamper with pagination tokens.
+- Pagination tokens are signed using HMAC-SHA256 and encoded with Base64URL.
+- The signature binds the cursor directly to the caller's organization ID, legal case ID, sort order, and filter parameters.
+- If anyone changes a single character, swaps the case ID, or alters the search filter, the signature verification fails immediately and halts the query before reaching the database.
+
+### One General Brain, Infinite Domains
+The General Brain is not a "Legal AI" or a "Sales Tool". It is a universal cognitive engine with five core capabilities:
+1. **Perception**: Takes raw data (text, documents, events) and turns it into structured observations without making assumptions about contracts, leads, or invoices.
+2. **Observation**: Records what was witnessed into PostgreSQL, tags it with a timestamp, and alerts real-time subscribers.
+3. **Context**: Figure out who is asking, what organization they belong to, and what boundary (like a specific case, sales deal, or shipment) limits their access.
+4. **Memory**: Stores knowledge candidates safely without letting them pretend to be verified truth.
+5. **Retrieval**: Searches memory strictly within the authorized scope, never peeking into other tenants' or cases' data.
+6. **Planning (Advisory)**: Proposes a step-by-step game plan for solving complex goals, and updates the plan if an engine reports missing information.
+
+Industry-specific intelligence (Egyptian Civil Law, B2B Sales, Maritime Logistics) lives in **Domain Extensions** outside the engines. When a law firm uses Brain-Co, the Legal Domain Extension interprets text as legal articles. When a logistics company uses Brain-Co, the Logistics Extension interprets it as vessel manifests—without altering a single line of engine code.
+
+### Three Tiers of Memory
+Memory is organized into three clean categories so data is never confused:
+- **Short-Term Memory (Redis/Scratchpad)**: Fast, temporary storage for work in progress (current plan, intermediate calculations, step results). Automatically expires after a short TTL. If Redis goes down, work is never lost because PostgreSQL is always the durable ledger.
+- **Observation Memory (PostgreSQL)**: An immutable historical log of everything the Brain observes. Observations are events, not facts.
+- **Long-Term Memory (PostgreSQL)**: Knowledge objects with a formal lifecycle: `candidate` -> `validated` -> `rejected`. Candidates cannot self-promote; only an authorized human can validate knowledge.
+
+### Real-Time Observation Streaming
+Users can open a live WebSocket connection to receive real-time updates as events occur.
+- Every WebSocket requires a verified JWT token.
+- Events are broadcast strictly within the user's organization.
+- Clients can filter the stream by case or scope to follow specific workflows without cross-tenant leakage.
+
+### General Brain as an Independent Package (`brain-co-core`)
+The General Brain has been physically extracted out of the backend into an independent, installable Python package called `brain-co-core` located under `brain/`:
+- **Complete Infrastructure Independence**: The General Brain package does not import FastAPI, SQLAlchemy, PostgreSQL, Redis, or ARQ. It contains pure Python cognitive contracts, engines, policies, and runtimes.
+- **Explicit Storage Injection**: The engines do not connect to a database themselves. Instead, they require a storage implementation injected when created (e.g. `ObservationEngine(store=my_store)`). If a store is forgotten, the engine refuses to start with an immediate `StorageConfigurationError`.
+- **In-Memory vs. Production Stores**: For tests and local CLI scripts, `brain.general.stores` provides thread-safe in-memory stores. In production, `backend/app/infrastructure/database/` provides robust SQLAlchemy adapters that connect to PostgreSQL.
+- **Provider-Independent AI**: The General Brain defines an abstract LLM interface (`ILLMClient`). The backend's AI service adapter fulfills this interface, ensuring the General Brain never hardcodes a specific AI vendor or model name.
+- **Seamless Monorepo Integration**: While `brain-co-core` is an independent package that can be built into a wheel and installed anywhere, existing backend callers continue to work seamlessly via backward-compatibility shims that preserve exact class identities.
+
+

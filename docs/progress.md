@@ -1,6 +1,54 @@
 # Progress
 
-## Done
+- **General Brain Physical Extraction Milestone (2026-10-30)**:
+  - **Standalone Package**: Extracted General Brain into standalone package `brain-co-core==0.1.0` under `brain/src/brain/` with standard `src/` layout.
+  - **Physical Engine & Runtime Extraction**: Canonical implementations of Perception, Observation, Context, Memory, Retrieval, Planning, MeshRouter, RuntimeDispatcher, PlanStepExecutor, and DomainRegistry now reside in `brain/src/brain/general/`.
+  - **Domain Extensions Extraction**: Migrated Legal, Sales, and Logistics implementations to `brain/src/brain/extensions/`.
+  - **Backend Adapters**: Implemented SQLAlchemy storage adapters (`SqlAlchemyObservationStore`, `SqlAlchemyMemoryStore`, `SqlAlchemyRetrievalStore`) in `backend/app/infrastructure/database/stores.py` and `LLMServiceAdapter` in `backend/app/infrastructure/ai/adapter.py`.
+  - **Strict Storage Injection**: Engines require explicit store injection; omitting a store raises `StorageConfigurationError`. No silent in-memory fallback.
+  - **Backward Compatibility Shims**: Kept legacy import paths working in `backend/app/ring1/` and `backend/app/domains/` via thin re-exports preserving exact class identity.
+  - **Architecture Isolation**: Added 16 AST and isolated-subprocess architecture tests in `tests/architecture/`. Proved that General Brain imports and runs completely independently without Backend, FastAPI, or SQLAlchemy.
+  - **Automated Test Baseline**: 347/347 tests passing (100% pass rate: 331 pre-existing tests + 16 new architecture tests). Wheel builds, installs, and imports cleanly in an isolated virtualenv without the repository on `PYTHONPATH`.
+
+- **Ring 1 General Brain Architecture & API Milestone (2026-10-30)**:
+  - **Domain-Agnostic Core Engines**: Decoupled Perception, Observation, Context, Memory, and Retrieval from legal or industry assumptions. Proved through automated tests (`test_domain_independence.py`) that new domains (Sales, Logistics, Healthcare) operate without modifying engine code.
+  - **Domain Extension Architecture**: Created `app/domains/` with `IDomainExtension` protocol and `DomainRegistry`, housing `LegalDomainExtension`, `SalesDomainExtension`, and `LogisticsFleetDomainExtension`.
+  - **Short-Term Memory Service**: Implemented `ShortTermMemoryService` in `app/core/short_term_memory.py` for task execution state caching with `org:{org}:task:{task}:{key}` scoping, TTL enforcement, and thread-safe in-memory fallback.
+  - **Observation WebSocket Manager**: Implemented `ObservationWebSocketManager` in `app/core/ws_manager.py` and real-time streaming endpoint `WS /api/v1/ws/observations` with JWT authentication and strict organization/scope broadcast isolation.
+  - **Ring 1 General Brain API Contracts (Section 17)**:
+    - `GET /api/v1/brain/status`: Health check, active engines, registered capabilities, active domain extensions.
+    - `POST /api/v1/observations`: Persist observations with idempotency, audit logging, and WebSocket broadcast.
+    - `GET /api/v1/observations`: Keyset cursor-paginated feed with cryptographic HMAC verification and event/source filters.
+    - `POST /api/v1/context/resolve`: Server-side context resolution asserting scope boundaries and ambiguity detection.
+    - `GET /api/v1/memory/{id}`: Tenant- and scope-isolated knowledge object retrieval with sanitized 404s.
+    - `GET /api/v1/retrieval/search`: Context-first lexical keyword search strictly filtering cross-tenant/cross-case data before ranking, excluding unvalidated candidates.
+    - `WS /api/v1/ws/observations`: Token-authenticated real-time observation streaming.
+  - **Automated Test Suite**: Authored 20 new tests across 3 test suites (`test_domain_independence.py`, `test_general_brain_api.py`, `test_short_term_memory.py`). Total 331/331 tests passing (100% pass rate, zero regressions).
+
+- **Ring 1 Architectural Restructuring & Execution Foundation Implementation (2026-10-30)**:
+  - **PostgreSQL Task Ledger & Outbox**: Implemented `tasks`, `task_outbox`, and `audit_events` tables with Alembic migration `a28b3c4d5e6f`.
+  - **TaskManager**: Implemented atomic task+outbox creation, `FOR UPDATE SKIP LOCKED` worker claims, generation fencing (`lease_generation`), heartbeat renewal, and stale worker rejection.
+  - **OutboxDispatcher**: Implemented transactional outbox dispatcher with dispatch generation fencing, lease recovery, and safe terminal failure handling.
+  - **Core Security & Context**: Implemented immutable `BrainContext` dataclass, server-side context resolution, and HMAC-SHA256 Base64URL signed keyset cursors.
+  - **Handoff Policy & Runtime Dispatcher**: Implemented domain-blind `RuntimeDispatcher` and `HandoffPolicy` enforcing peer delegations, cycle detection, depth limits, and preventing autonomous planning by ObservationEngine.
+  - **Five Core Engines & Protocols**: Restructured Perception, Observation, Context, Memory, and Retrieval to implement pure Python protocols, with advisory PlanningEngine (ADR-008).
+  - **Human Validation Authority**: Memory candidate lifecycle requires `validation_authority = True` to promote candidates, strictly forbidding automatic self-promotion.
+  - **Lexical Retrieval Strategy**: Extracted `LexicalRetrievalStrategy` candidate selection and term-frequency ranking while preserving strict case isolation.
+  - **Test Runner Decomposition**: Decomposed monolithic 1,576-line `Ring1TestRunner` into focused services (`registry.py`, `test_scenario_service.py`, `pdf_pipeline_service.py`) and a clean ~140-line façade.
+  - **Test Suite**: Authored 37 new tests across 5 test suites (`test_task_manager.py`, `test_outbox_dispatcher.py`, `test_cursor_security.py`, `test_handoff_policy.py`, `test_engine_restructuring.py`). Total 298/298 tests passing (100% pass rate, zero regressions).
+- **Ring 1 Full Remediation, Real PDF Ingestion Pipeline, and Live Test Console**:
+  - Remediated P0 security & context isolation in `BasicMemoryEngine` and `BasicRetrievalEngine` (enforced typed `ContextRef`, rejected payload ID spoofing, sanitized errors eliminating existence oracles).
+  - Remediation of exposed API secrets: removed key snippet in documentation, configured safe `.env.example`, documented rotation requirement.
+  - Implemented prerequisite validation (`depends_on`) and causal failure blocking in `PlanStepExecutor`.
+  - Upgraded `PlanningEngine` with goal-aware plan step generation and bounded evidence-based replanning.
+  - Built pure-Python PDF ingestion module (`app/ring1/pdf/`): `PDFExtractor` (page-by-page text, magic bytes signature validation, size limit, encrypted/scanned document detection) and `StructuredKnowledgeExtractor` (Egyptian legal articles, facts, dates, entities, obligations with page provenance).
+  - Connected PDF ingestion to the 6 Ring 1 mesh engines in `Ring1TestRunner.execute_pdf` (PostgreSQL observation and memory persistence with SHA-256 idempotency).
+  - Implemented test-only deterministic fault injection for context boundary failure demonstrating truthful prerequisite blocking, replanning, and recovery.
+  - Added FastAPI endpoints `POST /api/v1/ring1/upload-pdf` (SSE streaming) and `GET /api/v1/ring1/knowledge`.
+  - Added Next.js proxy routes `/api/ring1/upload-pdf` and `/api/ring1/knowledge`.
+  - Upgraded Ring 1 Test Console with PDF drag-and-drop, Live Trace, Plan Versions, and Extracted Knowledge Tab.
+  - Authored 25 new tests: 12 adversarial security tests, 7 PDF extractor tests, 6 end-to-end pipeline tests (261/261 backend/AI tests passing).
+  - Frontend TypeScript typecheck passes with 0 errors; Next.js production build passes (32/32 routes compiled).
 - Moved all backend documentation into `docs/backend/`.
 - Deleted outdated copies from root `docs/`.
 - Implemented Foundational Source Ingestion Pipeline in `data-engineering/orgbrain_ingest/` (validation, SHA-256 fingerprinting, raw storage abstraction, LocalStorageBackend, orchestration pipeline).
@@ -91,12 +139,66 @@
   - Added `LEGAL_SYSTEM_PROMPT` to `backend/app/api/v1/ai.py` and supported `context: "legal"` in `PromptRequest`.
   - Integrated `frontend/src/components/workspace/workspace-client.tsx` to request legal context.
   - Full test suite passes: 124 backend + 24 data-engineering + 15 AI integration (163 passing tests).
-  - Frontend typecheck and production build pass with 0 errors.
-  - Successfully pushed clean history to `origin/main` (`af5e902d..952eca52`).
+- **Implemented Ring 1 General Brain Peer-to-Peer Mesh Architecture (2026-10-27)**:
+  - Six engines cooperating peer-to-peer: Perception, Observation, Context, Basic Memory, Basic Retrieval, and Planning.
+  - Implemented versioned mesh envelopes (`MeshRequest`, `MeshResponse`) with delegation constraints, trace IDs, task IDs, and typed error handling.
+  - Built `CapabilityRegistry` with capability allowlist validation and `MeshRouter` with timeout protection and delegation depth bounding.
+  - Designed SQLAlchemy models `Observation` and `MemoryRecord` in `ring1.models.observation` with Alembic migration `f19a0a1b2c3d`.
+  - Enforced strict case-level context isolation across Context, Memory, and Retrieval.
+  - Authored ADR-008 (`docs/adrs/ADR-008-planning-engine.md`) documenting Planning Engine as approved 6th engine.
+  - Authored 34 dedicated unit and integration tests in `backend/tests/ring1/` (100% passing).
+  - Full test suite passes: 212 tests across backend and AI packages (0 failures).
+
+- **Manual End-to-End Integration Testing of the Six Ring 1 Engines (2026-10-27)**:
+  - Authored comprehensive end-to-end integration test in `backend/tests/ring1/test_e2e_mesh_integration.py` exercising all 6 engines cooperating peer-to-peer over `MeshRouter.dispatch()`.
+  - Verified full realistic legal workflow: raw input parsing (Perception), scope boundary resolution with negative ambiguity checks (Context), idempotent event recording and deduplication in PostgreSQL (Observation), context-scoped fact storage (Basic Memory), cross-case data isolation and access refusal (Basic Retrieval), and plan creation, step state preservation, forced failure on `CONTEXT_INSUFFICIENT`, and bounded replanning (Planning Engine v1 -> v2).
+  - Fixed `ContextRef` adaptation issue in `ObservationEngine._persist_observation`.
+  - Authored comprehensive 12-section manual integration report in `docs/rings/ring1-manual-integration-test-report.md`.
+  - All 35 Ring 1 tests pass (`backend/tests/ring1/`).
+  - Full test suite passes: 213 tests across backend and AI packages (0 failures).
+
+- **GUI-Based Ring 1 Live Integration Test Console (2026-10-28)**:
+  - Built interactive floating developer console in the Next.js frontend (`Ring 1 Live Test`) positioned at bottom-left without interfering with normal navigation or the bottom-right AI assistant widget.
+  - Implemented backend test runner service and in-memory registry in `backend/app/ring1/service.py`.
+  - Implemented SSE streaming & REST API endpoints in `backend/app/api/v1/ring1.py` with `get_test_operator_user` security guard in `backend/app/api/deps.py`.
+  - Implemented Next.js proxy API routes in `frontend/src/app/api/ring1/` streaming Server-Sent Events to the browser.
+  - Built 5 dedicated UI tabs: Live Trace, Delegation Graph (SVG with real-time dynamic edges), Plan Versions (v1 vs v2 comparison with step retention proof), Event Details (MeshRequest/MeshResponse JSON inspector), and Test Summary scorecard.
+  - Authored 7 integration tests in `backend/tests/test_api_v1_ring1.py`.
+  - All 42 Ring 1 tests pass (35 mesh tests + 7 API tests).
+  - Full backend test suite passes: 220 tests across backend and AI packages (0 failures).
+  - Frontend typecheck and production build pass cleanly (30 routes compiled).
+- **Ring 1 Security Remediation & Genuine Execution Implementation (Phases 1-7) — 2026-10-28**:
+  - **P0 Security Remediation**:
+    - Fixed unscoped memory GET vulnerability in `BasicMemoryEngine.handle_get_record`: enforced `self.require_context_ref()`, strict `case_id` & `organization_id` matching, payload spoofing protection, and error message sanitization.
+    - Added 6 security regression tests in `backend/tests/ring1/test_memory.py` (10/10 memory tests pass).
+    - Redacted exposed Gemini API key from `docs/rings/ring1-master-comprehensive-report.md`. Verified 0 secret leaks in git history and tracked files.
+  - **P1 Genuine Engine Peer Delegation**:
+    - Implemented autonomous engine-initiated delegation in `ObservationEngine.handle_record_event` (`self._delegate()` to `planning.create_plan` on follow-up).
+    - Implemented autonomous delegation in `PerceptionEngine.handle_structure_input` (`self._delegate()` to `observation.record_event` on `record_observation=True`).
+    - Enforced depth decrementing, timeouts, downstream failure propagation, and skipping of irrelevant engines.
+    - Authored 4 delegation regression tests in `backend/tests/ring1/test_mesh_integration.py` (8/8 mesh integration tests pass).
+  - **P1 Real Plan Step Execution & Evidence-Based Replanning**:
+    - Created deterministic `PlanStepExecutor` in `backend/app/ring1/execution/executor.py` resolving capabilities through `MeshRouter` with real typed requests and responses.
+    - Eliminated direct `StepStatus.COMPLETED` object mutations in `Ring1TestRunner` and test harnesses; steps only complete upon genuine successful execution.
+    - Added controlled execution boundary fault injection mechanism for test modes without synthetic dictionaries.
+    - Updated `PlanningEngine._build_recovery_steps` and `handle_request_replan` to consume actual execution `evidence` and `actual_result`, prevent repeated retries, mark superseded failed steps as `SKIPPED`, and retain completed steps.
+    - Authored 5 executor regression tests in `backend/tests/ring1/test_plan_executor.py` (5/5 tests pass).
+  - **Plan State Ephemerality**:
+    - Verified session-scoped in-memory plan storage in `PlanningEngine._plans` (PostgreSQL plan persistence explicitly deferred by ADR-008 / D-016 design).
+    - Added explicit restart behavior test `test_planning_in_memory_ephemerality_restart_behavior` in `backend/tests/ring1/test_planning.py`.
+  - **Honest Test Console & Service Runner**:
+    - Updated `Ring1TestRunner` in `backend/app/ring1/service.py` to route steps through `PlanStepExecutor`, execute real capability envelopes, observe genuine boundary failures in `force_failure` mode, request real replanning, and execute revised plans.
+  - **Full Test Suite & Compilation**:
+    - Ring 1 tests: 58/58 passed.
+    - Full project test suite: 236/236 backend and AI tests passed (0 failures).
+    - Frontend TypeScript typecheck: 0 errors (`tsc --noEmit`).
+    - Frontend Next.js production build: 30/30 routes compiled successfully.
 
 ## Next
-- User action required: revoke exposed OpenRouter API key in provider dashboard and issue replacement.
-- Address frontend dependency vulnerabilities (npm audit fix --force).
+- User action required: rotate Gemini API key in Google AI Studio console (it was committed in historical documentation prior to redaction).
+- Frontend maintenance: address Next.js upgrade recommendation (`next upgrade --agent=security`).
+- Future Ring 2 transition: vector embeddings, pgvector semantic search, multi-document RAG, and relational plan persistence.
 
 ## Blockers
-- None. Push completed successfully and verified on remote origin/main.
+- None.
+

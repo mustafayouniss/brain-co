@@ -12,6 +12,12 @@ from ai.core.services.llm_service import LLMService
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ENV_FILE_PATH)
+except ImportError:
+    pass
+
 
 try:
     from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -135,6 +141,18 @@ class AIConfig(_BaseAIConfig):
         )
     )
 
+    # Google Gemini
+    GEMINI_API_KEY: Optional[str] = Field(
+        default_factory=lambda: os.getenv("GEMINI_API_KEY")
+    )
+
+    GEMINI_BASE_URL: Optional[str] = Field(
+        default_factory=lambda: os.getenv(
+            "GEMINI_BASE_URL",
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+        )
+    )
+
     def create_provider(
         self,
         provider_id: Optional[str] = None,
@@ -235,6 +253,24 @@ class AIConfig(_BaseAIConfig):
                     self.AI_MODEL
                     if self.AI_MODEL != "gpt-4o"
                     else "deepseek-ai/DeepSeek-V4.1-Flash"
+                ),
+            )
+
+        elif target_provider in ("gemini", "google"):
+            if not self.GEMINI_API_KEY:
+                raise ValueError(
+                    "GEMINI_API_KEY is missing. "
+                    "Set it in your .env file."
+                )
+
+            return ProviderRegistry.create(
+                "gemini",
+                api_key=self.GEMINI_API_KEY,
+                base_url=self.GEMINI_BASE_URL,
+                default_model=(
+                    self.AI_MODEL
+                    if self.AI_MODEL != "gpt-4o"
+                    else "gemini-3.5-flash-lite"
                 ),
             )
 

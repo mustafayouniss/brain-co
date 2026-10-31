@@ -13,18 +13,43 @@ Every folder in the repository and its single-line designated purpose:
 - `docs/adr/`: Architecture Decision Records (ADRs) recording historical design choices and context.
 - `docs/journal/`: Daily chronological session records capturing actions taken, commands run, and issues resolved.
 - `docs/rings/`: Ring architecture boundary specifications detailing security, isolation, and ring requirements.
-- `backend/`: Python application workspace containing source code, migrations, virtual environment, and dependency manifests.
+- `brain/`: Standalone Python package `brain-co-core` containing the domain-agnostic General Brain and Domain Extensions.
+  - `pyproject.toml`: PEP 621 package build configuration using `src/` layout.
+  - `src/brain/general/`: Canonical General Brain implementation.
+    - `contracts/`: Capability definitions, execution envelopes, pure engine protocols, context references, storage protocols, LLM protocols, error types, and planning models.
+    - `engines/`: Core decoupled cognitive engines (`perception.py`, `observation.py`, `context.py`, `memory.py`, `retrieval.py`, and advisory `planning.py`).
+    - `policies/`: Peer handoff policy and delegation boundaries (`handoff.py`).
+    - `runtime/`: Mesh router (`router.py`), runtime dispatcher (`dispatcher.py`), plan step executor (`executor.py`), and instantiable freeze-aware domain registry (`domain_registry.py`).
+    - `stores/`: Explicit in-memory stores for unit tests and local execution (`in_memory_observation.py`, `in_memory_memory.py`, `in_memory_retrieval.py`).
+  - `src/brain/extensions/`: Concrete domain extensions consuming General Brain contracts.
+    - `legal/`: Egyptian Civil Law contract analyzer (`schemas.py`, `extractor.py`, `extension.py`).
+    - `sales/`: B2B sales opportunity detector (`schemas.py`, `extractor.py`, `extension.py`).
+    - `logistics/`: Maritime fleet tracking and customs manifest engine (`schemas.py`, `extractor.py`, `extension.py`).
+- `backend/`: Python backend application workspace.
 - `backend/.venv/`: Isolated Python 3.12 virtual environment containing installed project dependencies.
 - `backend/app/`: Primary FastAPI application package containing all backend logic and modules.
 - `backend/app/api/`: HTTP API routes, endpoint handlers, dependency providers (`deps.py`), and versioned routers (`v1/`).
-- `backend/app/core/`: Application settings, environment variable loaders, unified error handling (`errors.py`), and cryptographic/security utilities (`security.py`).
+- `backend/app/core/`: Application settings, environment loaders, error handling (`errors.py`), security (`security.py`), immutable server-side context (`context.py`), cryptographic HMAC keyset cursor pagination (`cursor.py`), durable audit ledger (`audit.py`), transactional task manager (`task_manager.py`), outbox dispatcher (`outbox_dispatcher.py`), handoff policy engine (`handoff.py`), and domain-blind runtime dispatcher (`dispatcher.py`).
+- `backend/app/infrastructure/`: Backend adapters implementing General Brain protocols:
+  - `database/stores.py`: Production SQLAlchemy implementations of `IObservationStore`, `IMemoryStore`, and `IRetrievalStore`.
+  - `ai/adapter.py`: Production `LLMServiceAdapter` implementing `ILLMClient` using Backend AI services.
 - `backend/app/db/`: Database connection engine (hide_parameters=True), declarative Base (`base.py`), session factory, and test safety guards (`test_utils.py`).
-- `backend/app/models/`: SQLAlchemy 2.0 ORM declarative models. Currently: `user.py` (User entity with case-insensitive email uniqueness and role check constraint).
+- `backend/app/domains/`: Backward compatibility shims for domain extensions re-exporting canonical classes from `brain.extensions.*`.
+- `backend/app/models/`: SQLAlchemy 2.0 ORM declarative models (`user.py`, `source.py`, `task.py` for tasks & task_outbox, `audit.py` for audit_events, and Ring 1 models via `ring1.models.observation`).
+- `backend/app/ring1/`: Backward compatibility shims for Ring 1 re-exporting canonical classes from `brain.general.*`.
 - `backend/app/schemas/`: Pydantic v2 data models for input validation, request parsing, and response serialization.
 - `backend/app/services/`: Reusable domain business logic and data processing operations decoupled from API endpoints.
 - `backend/migrations/`: Alembic database schema migration environment and runners.
 - `backend/migrations/versions/`: Individual revision scripts representing historical database schema transformations.
 - `backend/tests/`: Automated pytest test suites covering unit, integration, and endpoint behaviors with isolated test DB fixtures.
+- `backend/tests/ring1/`: Dedicated test suite for Ring 1 mesh, task manager, outbox dispatcher, cursor security, handoff policy, pure engine protocols, adversarial security, PDF extraction, and end-to-end pipeline.
+- `tests/architecture/`: Automated architecture isolation tests:
+  - `test_import_isolation.py`: AST import scanning verifying zero backend/DB imports in General Brain and zero backend imports in Domain Extensions.
+  - `test_standalone_general_brain.py`: Subprocess isolation test executing General Brain with only `brain/src` on `PYTHONPATH`.
+  - `test_storage_injection.py`: Storage configuration error and explicit injection verification.
+  - `test_domain_registry_lifecycle.py`: Registry lifecycle, duplication rejection, and immutability freeze transition.
+  - `test_compatibility_shims.py`: Exact identity preservation between legacy import paths and canonical implementations.
+
 - `ai/`: Reusable, provider-agnostic AI Engine package in Python 3.12.
 - `ai/core/`: Interfaces (`provider.py`), normalized Pydantic types (`request.py`, `response.py`, `error.py`), and orchestration services (`llm_service.py`).
 - `ai/providers/`: Extensible provider implementations (`OpenAIProvider`, `DeepSeekProvider`, `OpenRouterProvider`, `KimiProvider`, `OllamaProvider`, `FakeLLMProvider`) and central `ProviderRegistry` factory.
@@ -149,5 +174,57 @@ The following versions were deployed, executed, and verified:
 | `6dd2ff08b0bb` | — | Enables `pgvector` extension |
 | `778be99882b6` | `users` | User accounts; UUID PK, case-insensitive unique email, VARCHAR+CHECK role, timezone-aware `created_at` |
 | `e819b932c01a` | `sources` | Raw ingested source documents; UUID PK, original_filename, content_type, size_bytes > 0 check, SHA-256 checksum, storage_key, storage_mode, source_type, uploaded_by FK (users.id), status, created_at, updated_at |
+| `f19a0a1b2c3d` | `ring1_observations`, `ring1_memory_records` | Ring 1 observations with idempotency keys and JSONB payload; Ring 1 memory records scoped to case_id |
 
+### Ring 1 Live Test & Observability Endpoints
+Mounted at `/api/v1/ring1` (protected by `get_test_operator_user` in `deps.py`):
+- `POST /api/v1/ring1/test-run`: Executes live reproducible scenarios across the six engines (`mode`: `"e2e"`, `"force_failure"`, `"custom_prompt"`). Supports real-time Server-Sent Events (`text/event-stream`) and JSON responses.
+- `GET /api/v1/ring1/test-runs/{run_id}`: Retrieves stored execution trace, plan version models, and graph edges from `Ring1TestRunRegistry`.
+- `GET /api/v1/ring1/test-runs`: Lists recent test runs with execution metrics.
+- `GET /api/v1/ring1/capabilities`: Lists registered capabilities from `CapabilityRegistry` and engine health.
+
+### Ring 1 Execution & Inter-Engine Delegation Architecture
+- `backend/app/ring1/execution/executor.py` (`PlanStepExecutor`):
+  - Deterministic executor that runs an active `Plan` step-by-step.
+  - Resolves step capabilities via `MeshRouter` and capability registry.
+  - Formulates typed `MeshRequest` payloads incorporating parent execution evidence and `ContextRef`.
+  - Captures real execution results and populates `step.actual_result` and `step.evidence`.
+  - Sets `step.status = StepStatus.COMPLETED` only after genuine capability success.
+  - Sets `step.status = StepStatus.FAILED` upon capability failure or downstream error.
+  - Supports controlled execution boundary fault injection for deterministic testing (`fault_injection={capability: error_spec}`).
+- **Autonomous Peer Delegation**:
+  - `ObservationEngine.handle_record_event`: delegates via `self._delegate()` to `planning.create_plan` when follow-up is required.
+  - `PerceptionEngine.handle_structure_input`: delegates via `self._delegate()` to `observation.record_event` when `record_observation=True`.
+  - Context isolation: strictly preserves `ContextRef` across all delegated hops, decrements `max_delegations_remaining`, and prevents circular loops.
+- **Evidence-Based Replanning**:
+  - `PlanningEngine.handle_request_replan` evaluates failed step results, execution evidence, and failure codes.
+  - Dynamically synthesizes recovery capabilities (`retrieval.query`, `context.resolve`), retains completed steps, marks superseded failures as `SKIPPED`, and enforces `max_replans` termination.
+- **Plan Storage Scope**:
+  - Session/runtime scoped in `PlanningEngine._plans` (in-memory dictionary per process).
+  - Explicitly ephemeral across restarts; relational PostgreSQL persistence is deferred to Ring 2.
+
+### Ring 1 General Brain API Contracts (Section 17)
+- `GET /api/v1/brain/status`: Health check, active cognitive engines (Perception, Observation, Context, Memory, Retrieval, Planning), registered capabilities, and registered domain extensions.
+- `POST /api/v1/observations`: Persists normalized observation event to `ring1_observations` with SHA-256 idempotency, records append-only `AuditEvent`, and broadcasts to authorized WebSocket subscribers.
+- `GET /api/v1/observations`: Retrieves cursor-paginated observation feed with cryptographic HMAC-SHA256 Base64URL cursor integrity, strictly filtered by tenant and scope.
+- `POST /api/v1/context/resolve`: Server-side context boundary resolution evaluating domain, organization, and scope references. Returns resolution status, ambiguities, and scope constraints.
+- `GET /api/v1/memory/{id}`: Retrieves authorized knowledge object from `ring1_memory_records`. Enforces strict organization and scope boundaries, returning sanitized 404s on unauthorized access to prevent existence oracles.
+- `GET /api/v1/retrieval/search`: Context-first lexical keyword retrieval. Enforces tenant and scope filters at the database boundary before candidate scoring and ranking. Strictly excludes unvalidated candidates.
+- `WS /api/v1/ws/observations`: Real-time observation update stream. Authenticates clients via JWT token, enforces organization broadcast boundaries, and handles disconnects cleanly.
+
+### Short-Term Memory Architecture (Section 11.1)
+- `backend/app/core/short_term_memory.py` (`ShortTermMemoryService`):
+  - Ephemeral task execution state caching (current plan, intermediate execution data, step state).
+  - Standard key format: `org:{organization_id}:task:{task_id}:{key}`.
+  - TTL expiration (default 3600 seconds).
+  - Redis backend with automatic in-memory thread-safe TTL fallback.
+  - PostgreSQL remains the authoritative task and execution state ledger.
+
+### Domain Extension Architecture (Section 2.1)
+- `backend/app/domains/` (`IDomainExtension`, `DomainRegistry`):
+  - Decouples industry-specific intelligence from the General Brain.
+  - `LegalDomainExtension`: Egyptian Civil Law extraction and contract analysis.
+  - `SalesDomainExtension`: Enterprise sales deal signals and opportunity extraction.
+  - `LogisticsFleetDomainExtension`: Maritime vessel manifest and cargo inspection tracking.
+  - All 5 core engines operate with 100% domain independence without internal code changes.
 

@@ -74,6 +74,37 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
 - Purpose: Prepared as an infrastructure service to support knowledge graph exploration, citation networks, and multi-hop relationship reasoning in higher rings.
 - Invariant: Ring 0 and Foundational Ingestion remain purely on PostgreSQL + pgvector; backend core transactions and Source Memory remain independent of Neo4j.
 
+## D-016 — Ring 1 General Brain Peer-to-Peer Mesh Architecture & 6th Engine (Planning) (2026-10-27)
+- Six engines cooperating peer-to-peer via `MeshRouter` (`backend/app/ring1/`): Perception, Observation, Context, Basic Memory, Basic Retrieval, and Planning.
+- In-process capability dispatch with versioned envelopes (`MeshRequest`, `MeshResponse`).
+- Planning Engine approved as 6th engine (documented in ADR-008, Constitution unchanged).
+- Strict case-level isolation enforced across Context, Memory, and Retrieval (`case_id` boundary).
+- Database persistence via SQLAlchemy models (`ring1_observations`, `ring1_memory_records`) with Alembic migration `f19a0a1b2c3d`.
+
+---
+
+## D-012 Ring 1 Architecture, Execution Foundation & Engine Decoupling
+
+- **Scope**: Ring 1 Core Engines, Task Infrastructure, and Capability Execution.
+- **Five Core Engines**: Exactly five core engines: Perception, Observation, Context, Memory, Retrieval.
+- **Advisory Planning**: PlanningEngine is an advisory 6th capability under ADR-008 with zero execution authority.
+- **No Central Orchestrator**: Prohibits any central business orchestrator. The Backend Runtime Dispatcher is strictly domain-blind and validates registered capabilities and permitted handoffs without business logic.
+- **PostgreSQL Task Ledger**: PostgreSQL is the authoritative task and execution state ledger (`tasks`, `task_outbox`, `audit_events`). Redis/ARQ acts purely as an ephemeral message delivery broker.
+- **Worker Claim & Generation Fencing**: Worker claims, lease renewals, state transitions, and audit logs are strictly fenced by `lease_generation`. Superseded workers cannot commit side effects.
+- **Transactional Outbox**: Tasks and outbox records are created atomically in PostgreSQL. Dispatch claims use `FOR UPDATE SKIP LOCKED` with incremented `dispatch_generation` and lease expiry.
+- **Human Validation Authority**: Memory candidates are stored in `candidate` status and require explicit human validation authority (`validation_authority == True`) to be promoted. Automatic self-validation is forbidden.
+- **Cryptographic Cursor Pagination**: Keyset cursor pagination uses HMAC-SHA256 signatures with Base64URL encoding, binding cursors to organization, case, sort order, and canonical filter hashes.
+- **Vector Freeze**: Maintained pending written AI/Data Science sign-off. Non-vector lexical candidate ranking implemented.
+
+## D-017 — General Brain Physical Extraction into Independent Standalone Package (2026-10-30)
+- **Modular Monolith**: Extracted General Brain out of `backend/app/ring1/` into an independently installable Python package `brain-co-core` under `brain/` using standard `src/` layout (`brain/src/brain/general/` and `brain/src/brain/extensions/`).
+- **Domain Independence**: Canonical implementations of all 6 engines (Perception, Observation, Context, Memory, Retrieval, Planning), mesh runtime (`MeshRouter`, `RuntimeDispatcher`, `PlanStepExecutor`, `DomainRegistry`), and contracts physically live in `brain/src/brain/general/`.
+- **Strict Storage Injection**: Engines depend strictly on storage protocols (`IObservationStore`, `IMemoryStore`, `IRetrievalStore`). Storage must be explicitly injected via constructors; missing storage raises `StorageConfigurationError`. Engines never silently instantiate in-memory stores. Backend provides production SQLAlchemy implementations in `backend/app/infrastructure/database/stores.py`.
+- **Provider-Agnostic LLM Contract**: General Brain defines `ILLMClient`, `LLMRequest`, `LLMResponse`. Backend provides `LLMServiceAdapter` in `backend/app/infrastructure/ai/adapter.py`. Zero vendor model hardcoding in General Brain.
+- **Domain Extensions Separation**: Specialized domains (`legal`, `sales`, `logistics`) moved to `brain/src/brain/extensions/`. General Brain never imports concrete domain extensions; extensions consume General Brain contracts.
+- **Backward Compatibility**: `backend/app/ring1/` and `backend/app/domains/` maintain thin shims re-exporting canonical classes preserving exact class identity without duplicating implementation logic.
+- **Verification**: 16 new automated architecture isolation tests in `tests/architecture/` (AST scanning and isolated subprocess execution). 347/347 tests passing (100% pass rate).
+
 ---
 
 ## Open questions (do not assume an answer)
