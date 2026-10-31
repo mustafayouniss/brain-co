@@ -1,5 +1,15 @@
 # Progress
 
+- **General Brain Physical Extraction Milestone (2026-10-30)**:
+  - **Standalone Package**: Extracted General Brain into standalone package `brain-co-core==0.1.0` under `brain/src/brain/` with standard `src/` layout.
+  - **Physical Engine & Runtime Extraction**: Canonical implementations of Perception, Observation, Context, Memory, Retrieval, Planning, MeshRouter, RuntimeDispatcher, PlanStepExecutor, and DomainRegistry now reside in `brain/src/brain/general/`.
+  - **Domain Extensions Extraction**: Migrated Legal, Sales, and Logistics implementations to `brain/src/brain/extensions/`.
+  - **Backend Adapters**: Implemented SQLAlchemy storage adapters (`SqlAlchemyObservationStore`, `SqlAlchemyMemoryStore`, `SqlAlchemyRetrievalStore`) in `backend/app/infrastructure/database/stores.py` and `LLMServiceAdapter` in `backend/app/infrastructure/ai/adapter.py`.
+  - **Strict Storage Injection**: Engines require explicit store injection; omitting a store raises `StorageConfigurationError`. No silent in-memory fallback.
+  - **Backward Compatibility Shims**: Kept legacy import paths working in `backend/app/ring1/` and `backend/app/domains/` via thin re-exports preserving exact class identity.
+  - **Architecture Isolation**: Added 16 AST and isolated-subprocess architecture tests in `tests/architecture/`. Proved that General Brain imports and runs completely independently without Backend, FastAPI, or SQLAlchemy.
+  - **Automated Test Baseline**: 347/347 tests passing (100% pass rate: 331 pre-existing tests + 16 new architecture tests). Wheel builds, installs, and imports cleanly in an isolated virtualenv without the repository on `PYTHONPATH`.
+
 - **Ring 1 General Brain Architecture & API Milestone (2026-10-30)**:
   - **Domain-Agnostic Core Engines**: Decoupled Perception, Observation, Context, Memory, and Retrieval from legal or industry assumptions. Proved through automated tests (`test_domain_independence.py`) that new domains (Sales, Logistics, Healthcare) operate without modifying engine code.
   - **Domain Extension Architecture**: Created `app/domains/` with `IDomainExtension` protocol and `DomainRegistry`, housing `LegalDomainExtension`, `SalesDomainExtension`, and `LogisticsFleetDomainExtension`.

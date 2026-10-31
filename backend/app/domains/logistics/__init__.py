@@ -1,8 +1,12 @@
-"""Logistics domain package (fictional new domain)."""
+"""Compatibility shim for logistics domain package."""
 
-from app.domains.logistics.extension import LogisticsFleetDomainExtension
-from app.domains.logistics.extractor import MaritimeManifestExtractor
-from app.domains.logistics.schemas import CargoInspection, VoyageManifest, VoyageStage
+from brain.extensions.logistics import (
+    CargoInspection,
+    LogisticsFleetDomainExtension,
+    MaritimeManifestExtractor,
+    VoyageManifest,
+    VoyageStage,
+)
 
 __all__ = [
     "CargoInspection",

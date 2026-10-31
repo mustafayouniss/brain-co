@@ -96,8 +96,16 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
 - **Cryptographic Cursor Pagination**: Keyset cursor pagination uses HMAC-SHA256 signatures with Base64URL encoding, binding cursors to organization, case, sort order, and canonical filter hashes.
 - **Vector Freeze**: Maintained pending written AI/Data Science sign-off. Non-vector lexical candidate ranking implemented.
 
----
+## D-017 — General Brain Physical Extraction into Independent Standalone Package (2026-10-30)
+- **Modular Monolith**: Extracted General Brain out of `backend/app/ring1/` into an independently installable Python package `brain-co-core` under `brain/` using standard `src/` layout (`brain/src/brain/general/` and `brain/src/brain/extensions/`).
+- **Domain Independence**: Canonical implementations of all 6 engines (Perception, Observation, Context, Memory, Retrieval, Planning), mesh runtime (`MeshRouter`, `RuntimeDispatcher`, `PlanStepExecutor`, `DomainRegistry`), and contracts physically live in `brain/src/brain/general/`.
+- **Strict Storage Injection**: Engines depend strictly on storage protocols (`IObservationStore`, `IMemoryStore`, `IRetrievalStore`). Storage must be explicitly injected via constructors; missing storage raises `StorageConfigurationError`. Engines never silently instantiate in-memory stores. Backend provides production SQLAlchemy implementations in `backend/app/infrastructure/database/stores.py`.
+- **Provider-Agnostic LLM Contract**: General Brain defines `ILLMClient`, `LLMRequest`, `LLMResponse`. Backend provides `LLMServiceAdapter` in `backend/app/infrastructure/ai/adapter.py`. Zero vendor model hardcoding in General Brain.
+- **Domain Extensions Separation**: Specialized domains (`legal`, `sales`, `logistics`) moved to `brain/src/brain/extensions/`. General Brain never imports concrete domain extensions; extensions consume General Brain contracts.
+- **Backward Compatibility**: `backend/app/ring1/` and `backend/app/domains/` maintain thin shims re-exporting canonical classes preserving exact class identity without duplicating implementation logic.
+- **Verification**: 16 new automated architecture isolation tests in `tests/architecture/` (AST scanning and isolated subprocess execution). 347/347 tests passing (100% pass rate).
 
+---
 
 ## Open questions (do not assume an answer)
 

@@ -13,28 +13,42 @@ Every folder in the repository and its single-line designated purpose:
 - `docs/adr/`: Architecture Decision Records (ADRs) recording historical design choices and context.
 - `docs/journal/`: Daily chronological session records capturing actions taken, commands run, and issues resolved.
 - `docs/rings/`: Ring architecture boundary specifications detailing security, isolation, and ring requirements.
-- `backend/`: Python application workspace containing source code, migrations, virtual environment, and dependency manifests.
+- `brain/`: Standalone Python package `brain-co-core` containing the domain-agnostic General Brain and Domain Extensions.
+  - `pyproject.toml`: PEP 621 package build configuration using `src/` layout.
+  - `src/brain/general/`: Canonical General Brain implementation.
+    - `contracts/`: Capability definitions, execution envelopes, pure engine protocols, context references, storage protocols, LLM protocols, error types, and planning models.
+    - `engines/`: Core decoupled cognitive engines (`perception.py`, `observation.py`, `context.py`, `memory.py`, `retrieval.py`, and advisory `planning.py`).
+    - `policies/`: Peer handoff policy and delegation boundaries (`handoff.py`).
+    - `runtime/`: Mesh router (`router.py`), runtime dispatcher (`dispatcher.py`), plan step executor (`executor.py`), and instantiable freeze-aware domain registry (`domain_registry.py`).
+    - `stores/`: Explicit in-memory stores for unit tests and local execution (`in_memory_observation.py`, `in_memory_memory.py`, `in_memory_retrieval.py`).
+  - `src/brain/extensions/`: Concrete domain extensions consuming General Brain contracts.
+    - `legal/`: Egyptian Civil Law contract analyzer (`schemas.py`, `extractor.py`, `extension.py`).
+    - `sales/`: B2B sales opportunity detector (`schemas.py`, `extractor.py`, `extension.py`).
+    - `logistics/`: Maritime fleet tracking and customs manifest engine (`schemas.py`, `extractor.py`, `extension.py`).
+- `backend/`: Python backend application workspace.
 - `backend/.venv/`: Isolated Python 3.12 virtual environment containing installed project dependencies.
 - `backend/app/`: Primary FastAPI application package containing all backend logic and modules.
 - `backend/app/api/`: HTTP API routes, endpoint handlers, dependency providers (`deps.py`), and versioned routers (`v1/`).
 - `backend/app/core/`: Application settings, environment loaders, error handling (`errors.py`), security (`security.py`), immutable server-side context (`context.py`), cryptographic HMAC keyset cursor pagination (`cursor.py`), durable audit ledger (`audit.py`), transactional task manager (`task_manager.py`), outbox dispatcher (`outbox_dispatcher.py`), handoff policy engine (`handoff.py`), and domain-blind runtime dispatcher (`dispatcher.py`).
+- `backend/app/infrastructure/`: Backend adapters implementing General Brain protocols:
+  - `database/stores.py`: Production SQLAlchemy implementations of `IObservationStore`, `IMemoryStore`, and `IRetrievalStore`.
+  - `ai/adapter.py`: Production `LLMServiceAdapter` implementing `ILLMClient` using Backend AI services.
 - `backend/app/db/`: Database connection engine (hide_parameters=True), declarative Base (`base.py`), session factory, and test safety guards (`test_utils.py`).
+- `backend/app/domains/`: Backward compatibility shims for domain extensions re-exporting canonical classes from `brain.extensions.*`.
 - `backend/app/models/`: SQLAlchemy 2.0 ORM declarative models (`user.py`, `source.py`, `task.py` for tasks & task_outbox, `audit.py` for audit_events, and Ring 1 models via `ring1.models.observation`).
-- `backend/app/ring1/`: Ring 1 General Brain Peer-to-Peer Mesh implementation.
-  - `contracts/`: Typed versioned envelopes (`envelopes.py`), capability definitions (`capabilities.py`), pure engine protocols (`protocols.py`), context boundaries (`context_ref.py`), error models (`errors.py`), and planning lifecycle models (`plan_models.py`).
-  - `mesh/`: In-process peer capability router (`router.py`) enforcing delegation depth and tracing.
-  - `engines/`: Core engine implementations decoupled from transport (`perception.py`, `observation.py`, `context.py`, `memory.py`, `retrieval.py`, and advisory `planning.py`).
-  - `execution/`: Plan step execution runtime (`executor.py`) enforcing sequential step dependencies, prerequisite validation, and runtime fault injection.
-  - `pdf/`: Pure-Python PDF parsing and structured knowledge extraction (`extractor.py`, `schemas.py`, `structured.py`).
-  - `models/`: Ring 1 persistence models (`Observation`, `MemoryRecord` in `observation.py`).
-  - `services/`: Focused modular services decomposed from legacy test runner (`registry.py`, `test_scenario_service.py`, `pdf_pipeline_service.py`).
-  - `service.py`: Thin façade coordinating test runs and live PDF pipeline execution (`Ring1TestRunner`).
+- `backend/app/ring1/`: Backward compatibility shims for Ring 1 re-exporting canonical classes from `brain.general.*`.
 - `backend/app/schemas/`: Pydantic v2 data models for input validation, request parsing, and response serialization.
 - `backend/app/services/`: Reusable domain business logic and data processing operations decoupled from API endpoints.
 - `backend/migrations/`: Alembic database schema migration environment and runners.
-- `backend/migrations/versions/`: Individual revision scripts representing historical database schema transformations (`f19a0a1b2c3d_create_ring1_tables.py`, `a28b3c4d5e6f_create_tasks_outbox_audit_tables.py`).
+- `backend/migrations/versions/`: Individual revision scripts representing historical database schema transformations.
 - `backend/tests/`: Automated pytest test suites covering unit, integration, and endpoint behaviors with isolated test DB fixtures.
-- `backend/tests/ring1/`: Dedicated test suite for Ring 1 mesh, task manager, outbox dispatcher, cursor security, handoff policy, pure engine protocols, adversarial security, PDF extraction, and end-to-end pipeline (96 tests).
+- `backend/tests/ring1/`: Dedicated test suite for Ring 1 mesh, task manager, outbox dispatcher, cursor security, handoff policy, pure engine protocols, adversarial security, PDF extraction, and end-to-end pipeline.
+- `tests/architecture/`: Automated architecture isolation tests:
+  - `test_import_isolation.py`: AST import scanning verifying zero backend/DB imports in General Brain and zero backend imports in Domain Extensions.
+  - `test_standalone_general_brain.py`: Subprocess isolation test executing General Brain with only `brain/src` on `PYTHONPATH`.
+  - `test_storage_injection.py`: Storage configuration error and explicit injection verification.
+  - `test_domain_registry_lifecycle.py`: Registry lifecycle, duplication rejection, and immutability freeze transition.
+  - `test_compatibility_shims.py`: Exact identity preservation between legacy import paths and canonical implementations.
 
 - `ai/`: Reusable, provider-agnostic AI Engine package in Python 3.12.
 - `ai/core/`: Interfaces (`provider.py`), normalized Pydantic types (`request.py`, `response.py`, `error.py`), and orchestration services (`llm_service.py`).

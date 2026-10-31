@@ -243,10 +243,12 @@ Users can open a live WebSocket connection to receive real-time updates as event
 - Events are broadcast strictly within the user's organization.
 - Clients can filter the stream by case or scope to follow specific workflows without cross-tenant leakage.
 
-### Context-First Retrieval
-Unlike traditional search systems that search everything and filter out unauthorized results afterwards, Brain-Co enforces context **before** searching:
-- The user's authenticated organization and active case boundary are applied directly to the database query.
-- Records from other organizations or other cases never enter the candidate pool.
-- Unvalidated candidates are hidden from normal search results, ensuring only verified knowledge is returned.
+### General Brain as an Independent Package (`brain-co-core`)
+The General Brain has been physically extracted out of the backend into an independent, installable Python package called `brain-co-core` located under `brain/`:
+- **Complete Infrastructure Independence**: The General Brain package does not import FastAPI, SQLAlchemy, PostgreSQL, Redis, or ARQ. It contains pure Python cognitive contracts, engines, policies, and runtimes.
+- **Explicit Storage Injection**: The engines do not connect to a database themselves. Instead, they require a storage implementation injected when created (e.g. `ObservationEngine(store=my_store)`). If a store is forgotten, the engine refuses to start with an immediate `StorageConfigurationError`.
+- **In-Memory vs. Production Stores**: For tests and local CLI scripts, `brain.general.stores` provides thread-safe in-memory stores. In production, `backend/app/infrastructure/database/` provides robust SQLAlchemy adapters that connect to PostgreSQL.
+- **Provider-Independent AI**: The General Brain defines an abstract LLM interface (`ILLMClient`). The backend's AI service adapter fulfills this interface, ensuring the General Brain never hardcodes a specific AI vendor or model name.
+- **Seamless Monorepo Integration**: While `brain-co-core` is an independent package that can be built into a wheel and installed anywhere, existing backend callers continue to work seamlessly via backward-compatibility shims that preserve exact class identities.
 
 
