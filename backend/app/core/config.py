@@ -35,9 +35,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: str = "production"
     ORGANIZATION_ID: str = "org-brain-corp"
     AI_ANONYMOUS_TESTING_ENABLED: bool = False
+    ALLOW_TEST_OPERATOR: bool = False
 
     @model_validator(mode="after")
     def validate_production_anonymous(self) -> "Settings":

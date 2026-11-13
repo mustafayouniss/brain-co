@@ -291,3 +291,14 @@ def test_missing_secret_key_refused(monkeypatch):
         )
     error_text = str(exc_info.value)
     assert "Field required" in error_text or "missing" in error_text.lower()
+
+
+def test_ring1_capabilities_unauthenticated_production_returns_401(client, monkeypatch):
+    """GET /api/v1/ring1/capabilities without token returns 401 when production and ALLOW_TEST_OPERATOR is False."""
+    from app.core import config
+    monkeypatch.setattr(config.settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(config.settings, "ALLOW_TEST_OPERATOR", False)
+
+    response = client.get("/api/v1/ring1/capabilities")
+    assert response.status_code == 401
+

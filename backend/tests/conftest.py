@@ -42,6 +42,8 @@ from sqlalchemy.orm import Session
 os.environ.setdefault(
     "SECRET_KEY", "test-secret-key-for-test-suite-at-least-32-chars-long"
 )
+os.environ.setdefault("ENVIRONMENT", "test")
+os.environ.setdefault("ALLOW_TEST_OPERATOR", "true")
 
 from app.core.config import settings
 from app.db.test_utils import assert_safe_test_database

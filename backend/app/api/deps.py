@@ -170,7 +170,7 @@ def get_test_operator_user(
         except Exception:
             pass
 
-    if settings.ENVIRONMENT.lower() != "production":
+    if settings.ENVIRONMENT.lower() in ("development", "test") and getattr(settings, "ALLOW_TEST_OPERATOR", False):
         return None
 
     raise _AUTH_401
