@@ -13,6 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import get_db
 from app.core.audit import AuditService
@@ -46,8 +47,8 @@ async def create_observation(
 
     # Duplicate check if idempotency_key provided
     if idempotency_key:
-        existing = (
-            db.query(Observation)
+        existing = await run_in_threadpool(
+            lambda: db.query(Observation)
             .filter(Observation.idempotency_key == idempotency_key)
             .first()
         )
@@ -105,8 +106,8 @@ async def create_observation(
         correlation_id=payload.trace_id or context.correlation_id,
     )
 
-    db.commit()
-    db.refresh(obs)
+    await run_in_threadpool(db.commit)
+    await run_in_threadpool(db.refresh, obs)
 
     # Real-time WebSocket notification (tenant and scope isolated)
     obs_dict = {
