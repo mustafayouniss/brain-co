@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
+from app.core.config import settings
 from app.models.user import User
 from app.schemas.source import SourceResponse
 from app.services.source_service import create_source
@@ -51,7 +52,20 @@ async def ingest_source_endpoint(
             detail="Filename is required",
         )
 
-    content = await file.read()
+    chunk_size = 1024 * 1024  # 1 MB chunks
+    chunks: list[bytes] = []
+    total_bytes = 0
+
+    while chunk := await file.read(chunk_size):
+        total_bytes += len(chunk)
+        if total_bytes > settings.MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"File size exceeds maximum allowed size of {settings.MAX_UPLOAD_BYTES} bytes",
+            )
+        chunks.append(chunk)
+
+    content = b"".join(chunks)
 
     try:
         # Run Data Engineering pipeline

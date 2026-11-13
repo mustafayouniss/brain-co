@@ -73,3 +73,16 @@ def test_sources_endpoint_rejects_unsupported_file(client, auth_headers):
     assert response.status_code == 400
     data = response.json()
     assert "error" in data
+
+
+def test_sources_endpoint_rejects_oversized_file(client, auth_headers, monkeypatch):
+    """Uploading a file exceeding MAX_UPLOAD_BYTES is rejected with 413."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MAX_UPLOAD_BYTES", 100)
+    oversized_content = b"A" * 105
+    files = {"file": ("oversized.txt", io.BytesIO(oversized_content), "text/plain")}
+    response = client.post("/api/v1/sources", files=files, headers=auth_headers)
+    assert response.status_code == 413
+    data = response.json()
+    assert "error" in data

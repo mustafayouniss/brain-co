@@ -34,6 +34,7 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    MAX_UPLOAD_BYTES: int = 20 * 1024 * 1024
 
     ENVIRONMENT: str = "production"
     ORGANIZATION_ID: str = "org-brain-corp"
