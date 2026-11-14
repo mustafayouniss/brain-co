@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import json
 import uuid
+from app.core.config import settings
 import pytest
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -199,7 +200,7 @@ async def test_pdf_e2e_failure_and_recovery_pipeline(db_session):
 def test_pdf_upload_api_endpoint_non_streaming(client):
     """Test POST /api/v1/ring1/upload-pdf non-streaming via FastAPI client."""
     pdf_bytes = _create_sample_contract_pdf()
-    org_id = f"org-api-{uuid.uuid4().hex[:6]}"
+    org_id = settings.ORGANIZATION_ID
     case_id = f"case-api-{uuid.uuid4().hex[:6]}"
 
     response = client.post(
@@ -225,7 +226,7 @@ def test_pdf_upload_api_endpoint_non_streaming(client):
 def test_pdf_upload_api_endpoint_streaming(client):
     """Test POST /api/v1/ring1/upload-pdf SSE streaming response."""
     pdf_bytes = _create_sample_contract_pdf()
-    org_id = f"org-sse-{uuid.uuid4().hex[:6]}"
+    org_id = settings.ORGANIZATION_ID
     case_id = f"case-sse-{uuid.uuid4().hex[:6]}"
 
     response = client.post(
@@ -264,7 +265,7 @@ def test_pdf_upload_api_validation_errors(client):
     resp = client.post(
         "/api/v1/ring1/upload-pdf",
         files={"file": ("malicious.exe", b"MZ\x90\x00\x03\x00\x00\x00", "application/octet-stream")},
-        data={"organization_id": "org-1", "case_id": "case-1"},
+        data={"organization_id": settings.ORGANIZATION_ID, "case_id": "case-1"},
     )
     assert resp.status_code == 400
     err_body = resp.json()
@@ -276,7 +277,7 @@ def test_pdf_upload_api_validation_errors(client):
     resp2 = client.post(
         "/api/v1/ring1/upload-pdf",
         files={"file": ("valid.pdf", pdf_bytes, "application/pdf")},
-        data={"organization_id": "org-1", "case_id": "  "},
+        data={"organization_id": settings.ORGANIZATION_ID, "case_id": "  "},
     )
     assert resp2.status_code == 400
     err_body2 = resp2.json()
@@ -287,7 +288,7 @@ def test_pdf_upload_api_validation_errors(client):
 def test_saved_knowledge_persistence_and_isolation(client, db_session):
     """Verify stored knowledge persists in DB and is strictly isolated between cases."""
     pdf_bytes = _create_sample_contract_pdf()
-    org_id = f"org-iso-{uuid.uuid4().hex[:6]}"
+    org_id = settings.ORGANIZATION_ID
     case_1 = f"case-alpha-{uuid.uuid4().hex[:6]}"
     case_2 = f"case-beta-{uuid.uuid4().hex[:6]}"
 
