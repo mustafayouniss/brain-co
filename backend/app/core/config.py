@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     ORGANIZATION_ID: str = "org-brain-corp"
     AI_ANONYMOUS_TESTING_ENABLED: bool = False
     ALLOW_TEST_OPERATOR: bool = False
+    WS_RECHECK_SECONDS: int = 30
 
     @model_validator(mode="after")
     def validate_production_anonymous(self) -> "Settings":
