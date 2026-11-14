@@ -150,14 +150,21 @@ def db_session(test_engine):
 
 
 @pytest.fixture
-def client(db_session):
+def client(db_session, monkeypatch):
     """TestClient wired to use the isolated test database session fixture."""
     from fastapi.testclient import TestClient
+    from sqlalchemy.orm import sessionmaker
     from app.api.deps import get_db
     from app.main import app
 
     def _override_get_db():
         yield db_session
+
+    test_session_factory = sessionmaker(
+        bind=db_session.connection(),
+        join_transaction_mode="create_savepoint",
+    )
+    monkeypatch.setattr("app.api.v1.ws.SessionLocal", test_session_factory)
 
     app.dependency_overrides[get_db] = _override_get_db
     with TestClient(app, raise_server_exceptions=False) as c:

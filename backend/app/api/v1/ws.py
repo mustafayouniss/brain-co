@@ -11,14 +11,13 @@ import time
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, Query, WebSocket, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Query, WebSocket, status
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import get_db
 from app.core.config import settings
 from app.core.security import TokenSecurityError, decode_access_token
 from app.core.ws_manager import ws_manager
+from app.db.session import SessionLocal
 from app.models.user import User
 
 logger = logging.getLogger("app.api.v1.ws")
@@ -26,10 +25,10 @@ logger = logging.getLogger("app.api.v1.ws")
 router = APIRouter()
 
 
-def _user_is_active(db: Session, user_id: uuid.UUID) -> bool:
-    db.expire_all()
-    user = db.get(User, user_id)
-    return bool(user is not None and user.is_active)
+def _user_is_active(user_id: uuid.UUID) -> bool:
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        return bool(user is not None and user.is_active)
 
 
 @router.websocket("/observations")
@@ -38,7 +37,6 @@ async def websocket_observations(
     token: Optional[str] = Query(None),
     case_id: Optional[str] = Query(None),
     scope_id: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
 ) -> None:
     """Real-time observation update stream.
     
@@ -83,7 +81,7 @@ async def websocket_observations(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    active = await run_in_threadpool(_user_is_active, db, user_id)
+    active = await run_in_threadpool(_user_is_active, user_id)
     if not active:
         logger.warning("WebSocket rejected: user %s is not active", user_id)
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -113,7 +111,7 @@ async def websocket_observations(
 
             now = time.monotonic()
             if now - last_check >= settings.WS_RECHECK_SECONDS:
-                is_active = await run_in_threadpool(_user_is_active, db, user_id)
+                is_active = await run_in_threadpool(_user_is_active, user_id)
                 exp = payload.get("exp")
                 is_expired = bool(exp is not None and float(exp) <= time.time())
                 if not is_active or is_expired:
