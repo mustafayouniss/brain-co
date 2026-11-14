@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_test_operator_user
+from app.core.config import settings
 from app.models.user import User
 from app.ring1.contracts.capabilities import ALL_CAPABILITIES
 from app.ring1.service import Ring1TestRunner, test_run_registry
@@ -141,7 +142,7 @@ MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB limit
 @router.post("/upload-pdf", summary="Upload and Ingest Real PDF into Ring 1 Knowledge Pipeline")
 async def upload_pdf(
     file: UploadFile = File(..., description="Real PDF file to ingest"),
-    organization_id: str = Form(..., description="Target organization ID"),
+    organization_id: str | None = Form(None, description="Target organization ID"),
     case_id: str = Form(..., description="Target case ID"),
     mode: Literal["normal", "failure_recovery"] = Form("normal", description="Execution mode: normal or failure_recovery"),
     stream: bool = Form(True, description="Whether to stream real-time events via Server-Sent Events (SSE)"),
@@ -162,12 +163,19 @@ async def upload_pdf(
     9. Separate verification query confirms stored facts can be retrieved.
     10. Complete scorecard and structured knowledge returned.
     """
-    clean_org_id = organization_id.strip()
+    server_org = settings.ORGANIZATION_ID
+    if organization_id and organization_id.strip() and organization_id.strip() != server_org:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="organization_id does not match this deployment.",
+        )
+    clean_org_id = server_org
+
     clean_case_id = case_id.strip()
-    if not clean_org_id or not clean_case_id:
+    if not clean_case_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="organization_id and case_id are required non-empty parameters.",
+            detail="case_id is a required non-empty parameter.",
         )
 
     # Sanitize filename
@@ -241,7 +249,7 @@ async def upload_pdf(
 
 @router.get("/knowledge", summary="Query Persisted Knowledge Records for Case")
 def get_case_knowledge(
-    organization_id: str = Query(..., description="Target Organization ID"),
+    organization_id: str | None = Query(None, description="Target Organization ID"),
     case_id: str = Query(..., description="Target Case ID"),
     query: str = Query(default="", description="Optional search filter"),
     db: Session = Depends(get_db),
@@ -251,12 +259,19 @@ def get_case_knowledge(
 
     Enforces case and organization context isolation server-side.
     """
-    clean_org_id = organization_id.strip()
+    server_org = settings.ORGANIZATION_ID
+    if organization_id and organization_id.strip() and organization_id.strip() != server_org:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="organization_id does not match this deployment.",
+        )
+    clean_org_id = server_org
+
     clean_case_id = case_id.strip()
-    if not clean_org_id or not clean_case_id:
+    if not clean_case_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="organization_id and case_id are required non-empty parameters.",
+            detail="case_id is a required non-empty parameter.",
         )
 
     runner = Ring1TestRunner(db_session=db)
