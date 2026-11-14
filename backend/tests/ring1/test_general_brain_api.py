@@ -361,3 +361,21 @@ def test_websocket_observations_authentication_and_broadcast(client: TestClient,
         assert msg["data"]["event_type"] == "realtime.alert"
         assert msg["data"]["case_id"] == case_id
         assert msg["data"]["payload"]["message"] == "Critical deadline approaching"
+
+
+def test_websocket_observations_rejects_inactive_user(client: TestClient, db_session: Session):
+    """A user with is_active=False and a valid token cannot connect (handshake rejected)."""
+    inactive_user = User(
+        email=f"inactive_{uuid.uuid4().hex[:8]}@example.com",
+        full_name="Inactive Tester",
+        hashed_password=hash_password("password12345"),
+        role="employee",
+        is_active=False,
+    )
+    db_session.add(inactive_user)
+    db_session.flush()
+
+    token = create_access_token(str(inactive_user.id))
+    with pytest.raises(Exception):
+        with client.websocket_connect(f"/api/v1/ws/observations?token={token}") as ws:
+            pass
