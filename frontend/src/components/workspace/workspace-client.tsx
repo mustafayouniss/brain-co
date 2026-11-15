@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { workspaceCopy } from "@/content/app";
 import { authCopy } from "@/content/marketing";
 import { BrandMark } from "@/components/brand/icons";
-import { PrototypeBadge } from "@/components/auth/prototype-badge";
 import { buttonClasses } from "@/components/ui/button";
 import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { useOnboarding } from "@/hooks/use-onboarding";
@@ -87,7 +86,6 @@ export function WorkspaceClient() {
 
       <main id="main" className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-center gap-2">
-          <PrototypeBadge />
           <span className="tag tag-available">Domain: {domain.toUpperCase()}</span>
           {user.role && (
             <span className="tag border-[#946eff]/40 text-[#946eff] capitalize">
@@ -367,16 +365,30 @@ function CasesPanel() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {cases.map((c: any) => (
-            <div key={c.id} className="rounded-xl border border-[#202a3e] bg-[#0b1425] p-4 text-xs space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[#946eff] font-semibold">{c.case_number}</span>
-                <span className="tag text-[10px] capitalize">{c.status || "open"}</span>
+            <div
+              key={c.id}
+              className="rounded-xl border border-[#202a3e] bg-[#0b1425] hover:border-[#946eff]/40 transition-all p-4 text-xs space-y-3 flex flex-col justify-between"
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[#946eff] font-semibold">{c.case_number}</span>
+                  <span className="tag text-[10px] capitalize">{c.status || "open"}</span>
+                </div>
+                <p className="text-sm font-medium text-white">{c.title}</p>
+                {c.description && <p className="text-[#a7b0c1] line-clamp-2">{c.description}</p>}
               </div>
-              <p className="text-sm font-medium text-white">{c.title}</p>
-              {c.description && <p className="text-[#a7b0c1] line-clamp-2">{c.description}</p>}
-              <div className="pt-2 border-t border-[#202a3e] flex items-center justify-between text-[11px] text-[#8a94a8]">
-                <span>ID: {c.id.slice(0, 8)}...</span>
-                <span>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ""}</span>
+
+              <div className="pt-2 border-t border-[#202a3e] flex items-center justify-between">
+                <span className="text-[11px] text-[#8a94a8]">
+                  {c.created_at ? new Date(c.created_at).toLocaleDateString() : ""}
+                </span>
+                <Link
+                  href={`/workspace/cases/${c.id}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#946eff]/10 border border-[#946eff]/30 px-2.5 py-1 text-[11px] font-semibold text-[#946eff] hover:bg-[#946eff] hover:text-white transition-colors"
+                >
+                  <span>Open Workspace</span>
+                  <span aria-hidden="true">→</span>
+                </Link>
               </div>
             </div>
           ))}

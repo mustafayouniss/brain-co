@@ -182,6 +182,36 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
   5. **Tenant Isolation Verification**:
      - Automated test suite `backend/tests/test_saas_organization_isolation.py` proves tenant partitioning across 5 real organizations with zero cross-tenant leakage across cases, memory, observations, and AI Employee.
 
+## D-023 — Case Access Control Strategy (CACS) & Elimination of Synthetic Case Creation (2026-11-15)
+- **Problem**:
+  - `pdf_pipeline_service.py` contained fallback logic creating synthetic `Case` records if a requested case did not exist, creating a fail-open security bypass.
+  - Case API endpoints in `cases.py` lacked explicit authorization validation, risking horizontal privilege escalation.
+- **Decisions**:
+  1. **Fail-Closed Case Authorization**: Cases can no longer be manufactured on-the-fly during ingestion or context resolution. A case must pre-exist in the database within the authenticated tenant organization. Missing cases raise `CaseNotFoundError` immediately.
+  2. **Authoritative Role-Based Case Access (`CaseService.validate_case_access`)**:
+     - Admins receive access to all cases within their tenant organization.
+     - Employees receive access only to cases they created (`created_by == user_id`) or are explicitly assigned to in the `case_assignments` table.
+     - Case status such as `"open"` or `"active"` does not grant access.
+     - Unauthorized access returns HTTP 404 to eliminate existence oracle leaks.
+  3. **Strict Ingestion Validation**: `POST /api/v1/ring1/upload-pdf` checks `CaseService.validate_case_access` before parsing any uploaded files.
+
+## D-024 — Canonical Mesh Lifecycle Events, Dual Delivery & Single-Use WebSocket Tickets (2026-11-15)
+- **Problem**:
+  - WebSocket observation manager directly received events without unified sequence stamping or canonical lifecycle typing.
+  - Connecting WebSockets directly using raw JWTs in query params or client-side JavaScript exposed sensitive credentials.
+  - The developer `<Ring1TestConsole />` was embedded globally in the public layout.
+- **Decisions**:
+  1. **Canonical Mesh Event Service (`MeshEventService`)**:
+     - Defined 12 canonical lifecycle event types (`MeshLifecycleEventType`).
+     - Stamped with monotonic sequences, persisted durably to `mesh_events` (with fallback if migration is pending), and broadcast across WebSocket subscribers via `ws_manager.broadcast_event`.
+  2. **Short-Lived Single-Use WebSocket Tickets**:
+     - Implemented `TicketService` with SHA-256 token hashing and atomic single-use PostgreSQL consumption.
+     - Tickets expire after 60 seconds; raw tokens are never persisted or logged.
+     - Frontend requests ticket via `/api/auth/ws-ticket` using existing HttpOnly session cookie, avoiding JWT exposure in frontend JavaScript.
+  3. **Dedicated Case Workspace**:
+     - Removed developer test console from `frontend/src/app/layout.tsx`.
+     - Built dedicated Case Workspace page at `/workspace/cases/[caseId]` providing tabbed navigation for Overview, Documents, Extracted Knowledge, Live Mesh Activity, and Case AI Employee.
+
 ---
 
 ## Open questions (do not assume an answer)
@@ -213,3 +243,4 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
 - 2026-10-06: OPEN-5 corrected (earlier text wrongly named a "Flutter teammate" and an auth start date without a source); OPEN-7 and "Team repository" section added after reviewing the team README.
 - 2026-10-06: D-011 added (Karim owns backend decisions, no team approval needed); the short-lived OPEN-6 was removed.
 - 2026-10-07: "Team repository" section updated from a screenshot of the team's `backend/` folder; branch plan noted for OPEN-7.
+- 2026-11-15: D-012 added (Dual-delivery Mesh event persistence with atomic single-use WebSocket tickets, fail-closed CACS boundaries, and transparent AI provider telemetry tagging).

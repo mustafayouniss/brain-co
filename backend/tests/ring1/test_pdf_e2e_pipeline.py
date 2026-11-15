@@ -24,8 +24,33 @@ import pytest
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
+from app.core.security import create_access_token, hash_password
+from app.models.case import Case
+from app.models.organization import Organization
+from app.models.user import User
 from app.ring1.models.observation import MemoryRecord, Observation
 from app.ring1.service import Ring1TestRunner, test_run_registry
+from app.services.case_service import CaseNotFoundError
+
+
+@pytest.fixture
+def admin_user(db_session) -> User:
+    user = User(
+        email=f"admin_{uuid.uuid4().hex[:8]}@example.com",
+        full_name="Ring1 Admin",
+        hashed_password=hash_password("adminpassword1234"),
+        role="admin",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+    return user
+
+
+@pytest.fixture
+def admin_headers(admin_user: User) -> dict[str, str]:
+    token = create_access_token(str(admin_user.id))
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _create_sample_contract_pdf() -> bytes:
@@ -62,6 +87,12 @@ async def test_pdf_e2e_normal_pipeline(db_session):
     pdf_bytes = _create_sample_contract_pdf()
     org_id = f"org-test-{uuid.uuid4().hex[:6]}"
     case_id = f"case-pdf-{uuid.uuid4().hex[:6]}"
+
+    # Authoritative DB setup
+    org = Organization(id=org_id, name="Test Org", slug=org_id, domain="legal")
+    case = Case(id=uuid.uuid4(), case_number=case_id, title=f"Matter {case_id}", organization_id=org_id, status="open")
+    db_session.add_all([org, case])
+    db_session.commit()
 
     events = []
     async for evt in runner.execute_pdf(
@@ -153,6 +184,12 @@ async def test_pdf_e2e_failure_and_recovery_pipeline(db_session):
     org_id = f"org-test-{uuid.uuid4().hex[:6]}"
     case_id = f"case-pdf-{uuid.uuid4().hex[:6]}"
 
+    # Authoritative DB setup
+    org = Organization(id=org_id, name="Test Org", slug=org_id, domain="legal")
+    case = Case(id=uuid.uuid4(), case_number=case_id, title=f"Matter {case_id}", organization_id=org_id, status="open")
+    db_session.add_all([org, case])
+    db_session.commit()
+
     events = []
     async for evt in runner.execute_pdf(
         pdf_bytes=pdf_bytes,
@@ -197,11 +234,15 @@ async def test_pdf_e2e_failure_and_recovery_pipeline(db_session):
     assert final_evts[0]["details"]["scorecard"]["persisted_facts"] > 0
 
 
-def test_pdf_upload_api_endpoint_non_streaming(client):
+def test_pdf_upload_api_endpoint_non_streaming(client, db_session, admin_headers):
     """Test POST /api/v1/ring1/upload-pdf non-streaming via FastAPI client."""
     pdf_bytes = _create_sample_contract_pdf()
     org_id = settings.ORGANIZATION_ID
     case_id = f"case-api-{uuid.uuid4().hex[:6]}"
+
+    case = Case(id=uuid.uuid4(), case_number=case_id, title=f"Matter {case_id}", organization_id=org_id, status="open")
+    db_session.add(case)
+    db_session.commit()
 
     response = client.post(
         "/api/v1/ring1/upload-pdf",
@@ -212,6 +253,7 @@ def test_pdf_upload_api_endpoint_non_streaming(client):
             "mode": "normal",
             "stream": "false",
         },
+        headers=admin_headers,
     )
     assert response.status_code == 200
     data = response.json()
@@ -223,11 +265,15 @@ def test_pdf_upload_api_endpoint_non_streaming(client):
     assert summary["scorecard"]["pages_processed"] == 2
 
 
-def test_pdf_upload_api_endpoint_streaming(client):
+def test_pdf_upload_api_endpoint_streaming(client, db_session, admin_headers):
     """Test POST /api/v1/ring1/upload-pdf SSE streaming response."""
     pdf_bytes = _create_sample_contract_pdf()
     org_id = settings.ORGANIZATION_ID
     case_id = f"case-sse-{uuid.uuid4().hex[:6]}"
+
+    case = Case(id=uuid.uuid4(), case_number=case_id, title=f"Matter {case_id}", organization_id=org_id, status="open")
+    db_session.add(case)
+    db_session.commit()
 
     response = client.post(
         "/api/v1/ring1/upload-pdf",
@@ -238,6 +284,7 @@ def test_pdf_upload_api_endpoint_streaming(client):
             "mode": "normal",
             "stream": "true",
         },
+        headers=admin_headers,
     )
     assert response.status_code == 200
     assert "text/event-stream" in response.headers["content-type"]
@@ -285,18 +332,24 @@ def test_pdf_upload_api_validation_errors(client):
     assert "required" in err_msg2.lower()
 
 
-def test_saved_knowledge_persistence_and_isolation(client, db_session):
+def test_saved_knowledge_persistence_and_isolation(client, db_session, admin_headers):
     """Verify stored knowledge persists in DB and is strictly isolated between cases."""
     pdf_bytes = _create_sample_contract_pdf()
     org_id = settings.ORGANIZATION_ID
     case_1 = f"case-alpha-{uuid.uuid4().hex[:6]}"
     case_2 = f"case-beta-{uuid.uuid4().hex[:6]}"
 
+    case_obj_1 = Case(id=uuid.uuid4(), case_number=case_1, title=f"Matter {case_1}", organization_id=org_id, status="open")
+    case_obj_2 = Case(id=uuid.uuid4(), case_number=case_2, title=f"Matter {case_2}", organization_id=org_id, status="open")
+    db_session.add_all([case_obj_1, case_obj_2])
+    db_session.commit()
+
     # Upload and ingest for case_1
     resp1 = client.post(
         "/api/v1/ring1/upload-pdf",
         files={"file": ("doc_alpha.pdf", pdf_bytes, "application/pdf")},
         data={"organization_id": org_id, "case_id": case_1, "stream": "false"},
+        headers=admin_headers,
     )
     assert resp1.status_code == 200
 
@@ -304,6 +357,7 @@ def test_saved_knowledge_persistence_and_isolation(client, db_session):
     resp_k1 = client.get(
         "/api/v1/ring1/knowledge",
         params={"organization_id": org_id, "case_id": case_1},
+        headers=admin_headers,
     )
     assert resp_k1.status_code == 200
     data_k1 = resp_k1.json()
@@ -314,6 +368,7 @@ def test_saved_knowledge_persistence_and_isolation(client, db_session):
     resp_k2 = client.get(
         "/api/v1/ring1/knowledge",
         params={"organization_id": org_id, "case_id": case_2},
+        headers=admin_headers,
     )
     assert resp_k2.status_code == 200
     data_k2 = resp_k2.json()
@@ -325,3 +380,38 @@ def test_saved_knowledge_persistence_and_isolation(client, db_session):
     records_fresh = fresh_runner.query_saved_knowledge(organization_id=org_id, case_id=case_1)
     assert len(records_fresh) >= 1
     assert records_fresh[0]["case_id"] == case_1
+
+
+def test_pdf_upload_unknown_case_fails_closed_404_no_synthesis(client, db_session):
+    """Verify uploading to an unknown case returns 404 and does NOT synthesize a case."""
+    pdf_bytes = _create_sample_contract_pdf()
+    org_id = settings.ORGANIZATION_ID
+    unknown_case = f"case-ghost-{uuid.uuid4().hex[:8]}"
+
+    resp = client.post(
+        "/api/v1/ring1/upload-pdf",
+        files={"file": ("contract.pdf", pdf_bytes, "application/pdf")},
+        data={"organization_id": org_id, "case_id": unknown_case, "stream": "false"},
+    )
+    assert resp.status_code == 404
+    # Ensure zero cases were synthesized in the database
+    synthesized = db_session.query(Case).filter(Case.case_number == unknown_case).first()
+    assert synthesized is None
+
+
+@pytest.mark.asyncio
+async def test_pdf_execute_unknown_case_raises_case_not_found(db_session):
+    """Verify Ring1TestRunner.execute_pdf raises CaseNotFoundError when case does not exist."""
+    runner = Ring1TestRunner(db_session=db_session)
+    pdf_bytes = _create_sample_contract_pdf()
+    org_id = f"org-test-{uuid.uuid4().hex[:6]}"
+    unknown_case = f"case-ghost-{uuid.uuid4().hex[:8]}"
+
+    with pytest.raises(CaseNotFoundError):
+        async for _ in runner.execute_pdf(
+            pdf_bytes=pdf_bytes,
+            filename="contract.pdf",
+            organization_id=org_id,
+            case_id=unknown_case,
+        ):
+            pass

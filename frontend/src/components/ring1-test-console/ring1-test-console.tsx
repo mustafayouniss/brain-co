@@ -1,5 +1,7 @@
 "use client";
 
+export { MeshTestConsole, type MeshTestConsoleProps } from "./mesh-test-console";
+
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {

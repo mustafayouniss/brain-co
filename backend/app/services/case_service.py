@@ -11,6 +11,7 @@ import uuid
 from uuid import UUID
 
 import sqlalchemy as sa
+from sqlalchemy.exc import ProgrammingError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.audit import AuditService
@@ -94,11 +95,27 @@ class CaseService:
         limit: int = 50,
         offset: int = 0,
         status_filter: Optional[str] = None,
+        user_id: Optional[UUID] = None,
+        user_role: str = "admin",
     ) -> list[Case]:
-        """List cases strictly scoped to the authenticated organization."""
+        """List cases strictly scoped to the authenticated organization and role.
+
+        Admins see all cases in the organization.
+        Employees see only cases they created or are explicitly assigned to.
+        """
         query = session.query(Case).filter(Case.organization_id == organization_id)
         if status_filter:
             query = query.filter(Case.status == status_filter)
+
+        if user_role != "admin" and user_id:
+            assigned_case_ids = (
+                session.query(CaseAssignment.case_id)
+                .filter(CaseAssignment.user_id == user_id)
+                .scalar_subquery()
+            )
+            query = query.filter(
+                (Case.created_by == user_id) | Case.id.in_(assigned_case_ids)
+            )
 
         return (
             query.order_by(Case.created_at.desc())
@@ -198,16 +215,19 @@ class CaseService:
             if case.created_by == user_id:
                 return case
 
-            assignment = (
-                session.query(CaseAssignment)
-                .filter(
-                    CaseAssignment.case_id == case.id,
-                    CaseAssignment.user_id == user_id,
+            try:
+                assignment = (
+                    session.query(CaseAssignment)
+                    .filter(
+                        CaseAssignment.case_id == case.id,
+                        CaseAssignment.user_id == user_id,
+                    )
+                    .first()
                 )
-                .first()
-            )
-            if assignment:
-                return case
+                if assignment:
+                    return case
+            except (ProgrammingError, OperationalError):
+                session.rollback()
 
         # Fail closed with 404 CaseNotFoundError
         raise CaseNotFoundError(f"Case '{case_id_or_number}' not found or access denied")

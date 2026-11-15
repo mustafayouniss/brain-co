@@ -266,3 +266,37 @@ Mounted at `/api/v1/ring1` (protected by `get_test_operator_user` in `deps.py`):
   - `frontend/src/app/api/brain/status/route.ts`: Server-side proxy querying backend health and cognitive engine status.
   - All 5 core engines operate with 100% domain independence without internal code changes.
 
+### Case Access Control Strategy (CACS) & Fail-Closed Ingestion
+- **Authoritative Server-Side Validation (`CaseService.validate_case_access`)**:
+  - Organization administrators have tenant-wide access to all cases belonging to their organization.
+  - Organization employees are strictly restricted to cases they created (`created_by == user_id`) or are explicitly assigned to via the `case_assignments` table.
+  - Case status such as `"open"` or `"active"` does not independently grant access.
+  - Any unauthorized access attempt or missing case fails closed with HTTP 404 (preventing existence oracle information leakage).
+- **Elimination of Auto-Synthesized Cases**:
+  - Ingestion pipeline (`pdf_pipeline_service.py`) no longer manufactures missing `Case` records on the fly.
+  - Ingestion requires a verified pre-existing case in the tenant database, validating either `case_number` or UUID `id`.
+  - Endpoint `POST /api/v1/ring1/upload-pdf` strictly enforces CACS before invoking extractor or pipeline logic.
+
+### Canonical Mesh Event Service & Dual Delivery (`backend/app/services/mesh_event_service.py`)
+- **Canonical Lifecycle Events (`MeshLifecycleEventType`)**:
+  - Defines 12 typed lifecycle events: `task_created`, `task_dispatched`, `task_received`, `context_retrieved`, `tool_invoked`, `tool_completed`, `handoff_evaluated`, `observation_persisted`, `memory_persisted`, `task_completed`, `task_failed`, `task_retry`.
+- **Durable Persistence & Real-Time Broadcast**:
+  - `MeshEventService.record_and_broadcast`: Generates monotonic sequence numbers, writes durable records to the `mesh_events` table (with safe fallback if migration is pending), and performs dual delivery.
+  - Dual delivery broadcasts events to connected clients via `ws_manager.broadcast_event` (WebSocket) and Server-Sent Events (SSE).
+
+### Dedicated Scoped Case Workspace & WebSocket Ticket Security
+- **Single-Use WebSocket Tickets (`POST /api/v1/auth/ws-ticket`)**:
+  - Frontend requests short-lived single-use tickets from `/api/auth/ws-ticket` using existing HttpOnly session cookies.
+  - Backend `TicketService` stores SHA-256 hashed tickets with 60-second TTL in PostgreSQL with atomic consumption (`UPDATE ... WHERE consumed = false RETURNING ...`).
+  - Frontend JavaScript never accesses or exposes the underlying backend JWT.
+- **Dedicated Case Workspace (`/workspace/cases/[caseId]`)**:
+  - Replaces global floating test consoles with a deep-linkable, dedicated Case Workspace page.
+  - Six functional tabs:
+    1. **Overview**: Reference metadata, UUID, tenant organization verification badge.
+    2. **Documents**: Case-scoped PDF upload dropzone and live document repository.
+    3. **Extracted Knowledge**: Grounded legal facts, obligations, and Egyptian Civil Code articles extracted from ingested case contracts.
+    4. **Mesh Test Console**: Embedded operator and developer console (`MeshTestConsole`) bound strictly to the case and tenant scope. Features live custom prompt execution, 6-engine E2E execution, failure injection & bounded replan, PDF contract ingestion, real plan step execution via `PlanStepExecutor`, dynamic SVG Peer-to-Peer Delegation Graph, event details inspector, and test summary scorecard.
+    5. **Live Mesh Activity**: Real-time event stream connected via authenticated, case-scoped WebSocket ticket.
+    6. **Case AI Employee**: Context-grounded interactive assistant strictly anchored in the case's extracted knowledge.
+
+

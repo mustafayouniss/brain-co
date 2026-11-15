@@ -121,6 +121,8 @@ class PdfPipelineService:
                 "sequence": seq,
                 "timestamp": _utcnow_iso(),
                 "run_id": run_id,
+                "organization_id": organization_id,
+                "case_id": case_id,
                 "source_engine": source_engine,
                 "destination_engine": destination_engine,
                 "capability": capability,
@@ -133,24 +135,40 @@ class PdfPipelineService:
                 "details": details or {},
             }
             events.append(evt)
+
+            # Dual delivery: broadcast real-time event to active WebSocket subscribers
+            try:
+                import asyncio
+                from app.core.ws_manager import ws_manager
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(
+                        ws_manager.broadcast_event(
+                            organization_id=organization_id,
+                            event_payload=evt,
+                            case_id=case_id,
+                        )
+                    )
+            except Exception:
+                pass
+
             return evt
 
-        # Ensure valid case exists in PostgreSQL session for authoritative validation
+        # Authoritative case validation (Fail-Closed: auto-synthesis is strictly forbidden)
         from app.models.case import Case
-        case_rec = self.runner.db_session.query(Case).filter(
-            Case.organization_id == organization_id,
-            Case.case_number == case_id,
-        ).first()
+        from app.services.case_service import CaseNotFoundError
+
+        case_query = self.runner.db_session.query(Case).filter(Case.organization_id == organization_id)
+        try:
+            parsed_uuid = uuid.UUID(case_id)
+            case_rec = case_query.filter((Case.id == parsed_uuid) | (Case.case_number == case_id)).first()
+        except (ValueError, AttributeError):
+            case_rec = case_query.filter(Case.case_number == case_id).first()
+
         if not case_rec:
-            case_rec = Case(
-                id=uuid.uuid4(),
-                case_number=case_id,
-                title=f"Legal Matter {case_id}",
-                organization_id=organization_id,
-                status="open",
+            raise CaseNotFoundError(
+                f"Case '{case_id}' does not exist in organization '{organization_id}'. Auto-synthesis is forbidden."
             )
-            self.runner.db_session.add(case_rec)
-            self.runner.db_session.commit()
 
         # ContextRef for this run
         ctx_ref = ContextRef(
@@ -801,11 +819,22 @@ class PdfPipelineService:
         query: str = "",
     ) -> list[dict[str, Any]]:
         """Retrieve persisted knowledge records for a case directly from PostgreSQL."""
+        case_matches = [case_id]
+        from app.models.case import Case
+        case_query = self.db_session.query(Case).filter(Case.organization_id == organization_id)
+        try:
+            parsed_uuid = uuid.UUID(case_id)
+            c = case_query.filter((Case.id == parsed_uuid) | (Case.case_number == case_id)).first()
+        except (ValueError, AttributeError):
+            c = case_query.filter(Case.case_number == case_id).first()
+        if c:
+            case_matches = list({str(c.id), c.case_number})
+
         stmt = (
             sa.select(MemoryRecord)
             .where(
                 MemoryRecord.organization_id == organization_id,
-                MemoryRecord.case_id == case_id,
+                MemoryRecord.case_id.in_(case_matches),
             )
             .order_by(MemoryRecord.created_at.desc())
         )

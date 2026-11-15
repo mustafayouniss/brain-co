@@ -50,6 +50,9 @@ class BaseEngine(ABC):
         self._llm_client = llm_client if llm_client is not None else llm_service
         self._mesh_router = mesh_router
         self._logger = logging.getLogger(f"brain.general.{self.engine_name}")
+        self._last_llm_error: Optional[str] = None
+        self._last_llm_status: str = "idle"
+        self._last_llm_model: Optional[str] = None
 
     @property
     @abstractmethod
@@ -119,7 +122,10 @@ class BaseEngine(ABC):
         or returns an error. Never raises — errors are logged and None is returned
         for the caller to handle with a deterministic fallback.
         """
+        self._last_llm_error = None
         if self._llm_client is None:
+            self._last_llm_status = "no_client"
+            self._last_llm_error = "LLM client not configured"
             self._logger.debug("LLM client not configured; using deterministic fallback.")
             return None
 
@@ -135,9 +141,15 @@ class BaseEngine(ABC):
                     max_tokens=max_tokens,
                 )
                 resp = await self._llm_client.complete(req)
+                self._last_llm_status = "success"
+                self._last_llm_model = model_hint or "gemini"
                 return resp.content
             elif hasattr(self._llm_client, "generate"):
                 import sys
+                provider = getattr(self._llm_client, "_provider", None)
+                default_model = getattr(provider, "_default_model", None) if provider else None
+                chosen_model = default_model or model_hint or "gemini-3.5-flash-lite"
+
                 ai_req_mod = sys.modules.get("ai.core.types.request")
                 if ai_req_mod is not None:
                     b_req = ai_req_mod.LLMRequest(
@@ -145,7 +157,7 @@ class BaseEngine(ABC):
                             ai_req_mod.LLMMessage(role="system", content=system_prompt),
                             ai_req_mod.LLMMessage(role="user", content=user_content),
                         ],
-                        model=model_hint or "gpt-4o-mini",
+                        model=chosen_model,
                         temperature=temperature,
                         max_tokens=max_tokens,
                     )
@@ -155,7 +167,7 @@ class BaseEngine(ABC):
                             self.role = role
                             self.content = content
                     class _SimpleReq:
-                        def __init__(self, messages: list, model: str, temperature: float, max_tokens: Optional[int]) -> None:
+                        def __init__(self, messages: list, model: Optional[str], temperature: float, max_tokens: Optional[int]) -> None:
                             self.messages = messages
                             self.model = model
                             self.temperature = temperature
@@ -165,16 +177,22 @@ class BaseEngine(ABC):
                             _SimpleMsg("system", system_prompt),
                             _SimpleMsg("user", user_content),
                         ],
-                        model=model_hint or "gpt-4o-mini",
+                        model=chosen_model,
                         temperature=temperature,
                         max_tokens=max_tokens,
                     )
                 resp = await self._llm_client.generate(b_req)
+                self._last_llm_status = "success"
+                self._last_llm_model = chosen_model
                 return getattr(resp, "content", None) or str(resp)
             else:
+                self._last_llm_status = "unknown_interface"
+                self._last_llm_error = "Unknown LLM client interface"
                 self._logger.warning("Unknown LLM client interface on '%s'", self.engine_name)
                 return None
         except Exception as exc:
+            self._last_llm_status = "error"
+            self._last_llm_error = str(exc)
             self._logger.warning(
                 "LLM call failed in engine '%s': %s",
                 self.engine_name,

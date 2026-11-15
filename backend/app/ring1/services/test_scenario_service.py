@@ -76,6 +76,8 @@ class TestScenarioService:
         self,
         mode: str = "e2e",
         custom_prompt: str | None = None,
+        organization_id: str | None = None,
+        case_id: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Generator yielding structured real-time events for the requested test mode."""
         run_id = f"run-{uuid.uuid4().hex[:10]}"
@@ -86,6 +88,9 @@ class TestScenarioService:
         delegation_edges: list[dict[str, str]] = []
         initial_plan_payload: dict[str, Any] | None = None
         replanned_payload: dict[str, Any] | None = None
+
+        active_org = organization_id or f"org-test-{uuid.uuid4().hex[:6]}"
+        active_case = case_id or f"case-test-{uuid.uuid4().hex[:6]}"
 
         def record_event(
             *,
@@ -112,6 +117,8 @@ class TestScenarioService:
                 "sequence": seq,
                 "timestamp": _utcnow_iso(),
                 "run_id": run_id,
+                "organization_id": active_org,
+                "case_id": active_case,
                 "source_engine": source_engine,
                 "destination_engine": destination_engine,
                 "capability": capability,
@@ -124,27 +131,76 @@ class TestScenarioService:
                 "details": details or {},
             }
             events.append(evt)
+
+            # Dual delivery: broadcast real-time event to active WebSocket subscribers
+            try:
+                from app.core.ws_manager import ws_manager
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(
+                        ws_manager.broadcast_event(
+                            organization_id=active_org,
+                            event_payload=evt,
+                            case_id=active_case,
+                        )
+                    )
+            except Exception:
+                pass
+
+            # Persist canonical lifecycle event
+            try:
+                from app.services.mesh_event_service import MeshEventService
+                MeshEventService.record_and_broadcast(
+                    db=self.runner.db_session,
+                    task_id=run_id,
+                    event_type=event_type,
+                    organization_id=active_org,
+                    case_id=active_case,
+                    source_engine=source_engine,
+                    destination_engine=destination_engine,
+                    payload={"capability": capability, "details": details or {}, "status": status},
+                    status=status,
+                )
+            except Exception:
+                pass
+
             return evt
 
         # ---------------------------------------------------------------------
         # MODE 1: Full 6-Engine End-to-End Scenario
         # ---------------------------------------------------------------------
         if mode == "e2e":
-            org_id = f"org-test-{uuid.uuid4().hex[:6]}"
-            case_id = f"case-test-{uuid.uuid4().hex[:6]}"
+            org_id = active_org
+            case_id = active_case
             adversary_case_id = f"case-adversary-{uuid.uuid4().hex[:6]}"
 
             # Ensure valid case exists in PostgreSQL session for authoritative validation
             from app.models.case import Case
-            test_case = Case(
-                id=uuid.uuid4(),
-                case_number=case_id,
-                title=f"Matter {case_id}",
-                organization_id=org_id,
-                status="open",
-            )
-            self.runner.db_session.add(test_case)
-            self.runner.db_session.commit()
+            existing_case = None
+            try:
+                c_uuid = uuid.UUID(str(case_id))
+                existing_case = self.runner.db_session.query(Case).filter(Case.id == c_uuid).first()
+            except (ValueError, AttributeError):
+                pass
+            if not existing_case:
+                existing_case = self.runner.db_session.query(Case).filter(
+                    Case.organization_id == org_id,
+                    Case.case_number == str(case_id),
+                ).first()
+
+            if not existing_case:
+                test_case = Case(
+                    id=uuid.uuid4(),
+                    case_number=str(case_id),
+                    title=f"Matter {case_id}",
+                    organization_id=org_id,
+                    status="open",
+                )
+                self.runner.db_session.add(test_case)
+                self.runner.db_session.commit()
+                case_id = test_case.case_number
+            else:
+                case_id = existing_case.case_number or str(existing_case.id)
 
             # 1. Perception
             t0 = time.perf_counter()
@@ -441,7 +497,12 @@ class TestScenarioService:
                 duration_ms=dur_plan,
                 plan_version=plan_v,
                 response_envelope=resp_plan.model_dump(mode="json"),
-                details={"plan_id": plan_id, "steps_count": len(initial_plan_payload.get("steps", []))},
+                details={
+                    "plan_id": plan_id,
+                    "steps_count": len(initial_plan_payload.get("steps", [])),
+                    "plan_origin": initial_plan_payload.get("plan_origin", "deterministic_fallback"),
+                    "provider_error": initial_plan_payload.get("provider_error"),
+                },
             )
 
             # 7. Execute Step 1 in Plan genuinely via PlanStepExecutor
@@ -471,8 +532,36 @@ class TestScenarioService:
         # MODE 2: Controlled Failure and Bounded Replanning
         # ---------------------------------------------------------------------
         elif mode == "force_failure":
-            org_id = f"org-test-{uuid.uuid4().hex[:6]}"
-            case_id = f"case-test-{uuid.uuid4().hex[:6]}"
+            org_id = active_org
+            case_id = active_case
+
+            from app.models.case import Case
+            existing_case = None
+            try:
+                c_uuid = uuid.UUID(str(case_id))
+                existing_case = self.runner.db_session.query(Case).filter(Case.id == c_uuid).first()
+            except (ValueError, AttributeError):
+                pass
+            if not existing_case:
+                existing_case = self.runner.db_session.query(Case).filter(
+                    Case.organization_id == org_id,
+                    Case.case_number == str(case_id),
+                ).first()
+
+            if not existing_case:
+                test_case = Case(
+                    id=uuid.uuid4(),
+                    case_number=str(case_id),
+                    title=f"Matter {case_id}",
+                    organization_id=org_id,
+                    status="open",
+                )
+                self.runner.db_session.add(test_case)
+                self.runner.db_session.commit()
+                case_id = test_case.case_number
+            else:
+                case_id = existing_case.case_number or str(existing_case.id)
+
             ctx_ref = ContextRef(
                 organization_id=org_id,
                 case_id=case_id,
@@ -672,8 +761,35 @@ class TestScenarioService:
         # ---------------------------------------------------------------------
         elif mode == "custom_prompt":
             prompt_text = (custom_prompt or "Review breach of non-compete clause").strip()
-            org_id = f"org-test-{uuid.uuid4().hex[:6]}"
-            case_id = f"case-test-{uuid.uuid4().hex[:6]}"
+            org_id = active_org
+            case_id = active_case
+
+            from app.models.case import Case
+            existing_case = None
+            try:
+                c_uuid = uuid.UUID(str(case_id))
+                existing_case = self.runner.db_session.query(Case).filter(Case.id == c_uuid).first()
+            except (ValueError, AttributeError):
+                pass
+            if not existing_case:
+                existing_case = self.runner.db_session.query(Case).filter(
+                    Case.organization_id == org_id,
+                    Case.case_number == str(case_id),
+                ).first()
+
+            if not existing_case:
+                test_case = Case(
+                    id=uuid.uuid4(),
+                    case_number=str(case_id),
+                    title=f"Matter {case_id}",
+                    organization_id=org_id,
+                    status="open",
+                )
+                self.runner.db_session.add(test_case)
+                self.runner.db_session.commit()
+                case_id = test_case.case_number
+            else:
+                case_id = existing_case.case_number or str(existing_case.id)
 
             # 1. Perception
             t0 = time.perf_counter()
@@ -747,8 +863,30 @@ class TestScenarioService:
                 status="completed",
                 plan_version=plan_v,
                 response_envelope=resp_plan.model_dump(mode="json"),
-                details={"plan_id": plan_id, "steps_count": len(initial_plan_payload.get("steps", []))},
+                details={
+                    "plan_id": plan_id,
+                    "steps_count": len(initial_plan_payload.get("steps", [])),
+                    "plan_origin": initial_plan_payload.get("plan_origin", "deterministic_fallback"),
+                    "provider_error": initial_plan_payload.get("provider_error"),
+                },
             )
+
+            # 4. Plan Step Execution
+            plan_model = self.planning._plans.get(plan_id)
+            if plan_model and plan_model.steps:
+                async for step_event in self.executor.execute_plan(plan_model, context_ref=ctx_ref):
+                    if step_event.get("event_type") in ("step_completed", "step_failed", "step_retained"):
+                        yield record_event(
+                            source_engine="plan_executor",
+                            destination_engine=step_event.get("capability", "planning").split(".")[0],
+                            capability=step_event.get("capability", "planning"),
+                            event_type=step_event.get("event_type", "step_completed"),
+                            status=step_event.get("status", "completed"),
+                            duration_ms=step_event.get("duration_ms"),
+                            plan_version=plan_v,
+                            response_envelope=step_event.get("response_envelope"),
+                            details=step_event.get("result", {}),
+                        )
 
         # ---------------------------------------------------------------------
         # Final Summary Event
@@ -764,6 +902,14 @@ class TestScenarioService:
             if p_obj:
                 current_plan_model = p_obj.model_dump(mode="json")
 
+        plan_origin = (
+            initial_plan_payload.get("plan_origin", "deterministic_fallback")
+            if initial_plan_payload
+            else "deterministic_fallback"
+        )
+        provider_error = initial_plan_payload.get("provider_error") if initial_plan_payload else None
+        execution_mode = "gemini_live" if plan_origin == "gemini_ai" else "deterministic_fallback"
+
         summary_data = {
             "run_id": run_id,
             "mode": mode,
@@ -776,6 +922,9 @@ class TestScenarioService:
             "initial_plan": initial_plan_payload,
             "replanned_payload": replanned_payload,
             "current_plan": current_plan_model,
+            "plan_origin": plan_origin,
+            "execution_mode": execution_mode,
+            "provider_error": provider_error,
         }
 
         final_evt = record_event(

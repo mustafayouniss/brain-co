@@ -110,6 +110,8 @@ class LexicalRetrievalStrategy(IRetrievalStrategy):
     ranking, and result assembly without claiming semantic vector retrieval.
     """
 
+    strategy_name: str = "postgresql_lexical"
+
     async def execute_search(
         self,
         query: str,

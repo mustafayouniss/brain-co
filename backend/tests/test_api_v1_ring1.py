@@ -150,3 +150,84 @@ def test_ring1_knowledge_rejects_mismatched_organization_id(client):
     err_msg = err_body.get("detail") or err_body.get("error", {}).get("message", "")
     assert "organization_id does not match this deployment." in err_msg
 
+
+def test_ring1_test_run_with_scoped_case_success(client, admin_headers, db_session):
+    """POST /api/v1/ring1/test-run succeeds with verified case_id under CACS."""
+    from app.models.case import Case
+    from app.models.organization import Organization, OrganizationMembership
+
+    org_id = f"org-test-{uuid.uuid4().hex[:6]}"
+    org = Organization(id=org_id, name="Test Org", slug=f"test-slug-{uuid.uuid4().hex[:4]}", domain="legal")
+    db_session.add(org)
+
+    # Decode admin user id
+    token = admin_headers["Authorization"].split(" ")[1]
+    from app.core.security import decode_access_token, create_access_token
+    payload = decode_access_token(token)
+    user_id = uuid.UUID(payload["sub"])
+
+    # Add admin membership
+    membership = OrganizationMembership(organization_id=org_id, user_id=user_id, role="admin")
+    db_session.add(membership)
+
+    # Create case
+    case = Case(
+        id=uuid.uuid4(),
+        case_number=f"CAS-{uuid.uuid4().hex[:4]}",
+        title="Scoped Test Case",
+        organization_id=org_id,
+        created_by=user_id,
+        status="open",
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    # Reissue token with org_id
+    scoped_token = create_access_token(str(user_id), org_id=org_id, role="admin")
+    headers = {"Authorization": f"Bearer {scoped_token}"}
+
+    res = client.post(
+        "/api/v1/ring1/test-run",
+        json={"mode": "custom_prompt", "custom_prompt": "Audit contract clause", "case_id": str(case.id), "stream": False},
+        headers=headers,
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "completed"
+    assert data["run_id"].startswith("run-")
+    assert len(data["events"]) >= 3
+    # Check that events carry organization_id and case_id
+    assert any(e.get("case_id") for e in data["events"])
+
+
+def test_ring1_test_run_with_nonexistent_case_fails_closed(client, admin_headers):
+    """POST /api/v1/ring1/test-run with non-existent case fails closed with 404."""
+    res = client.post(
+        "/api/v1/ring1/test-run",
+        json={"mode": "custom_prompt", "custom_prompt": "Audit clause", "case_id": "00000000-0000-0000-0000-000000000000", "stream": False},
+        headers=admin_headers,
+    )
+    assert res.status_code == 404
+    body = res.json()
+    msg = body.get("detail") or body.get("error", {}).get("message", "")
+    assert "not found or access denied" in msg.lower()
+
+
+def test_ring1_test_run_with_mismatched_org_fails_403(client, admin_headers):
+    """POST /api/v1/ring1/test-run with mismatched organization_id returns 403."""
+    from app.core.security import decode_access_token, create_access_token
+    token = admin_headers["Authorization"].split(" ")[1]
+    payload = decode_access_token(token)
+    user_id = payload["sub"]
+
+    scoped_token = create_access_token(str(user_id), org_id="org-real-tenant", role="admin")
+    headers = {"Authorization": f"Bearer {scoped_token}"}
+
+    res = client.post(
+        "/api/v1/ring1/test-run",
+        json={"mode": "e2e", "organization_id": "org-spoofed-attacker", "stream": False},
+        headers=headers,
+    )
+    assert res.status_code == 403
+
+

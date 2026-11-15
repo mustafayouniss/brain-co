@@ -286,4 +286,18 @@ The frontend workspace (`frontend/src/components/workspace/workspace-client.tsx`
 - **Real-Time Live Feed**: Uses a resilient WebSocket hook (`use-observation-ws.ts`) that listens to `/api/v1/ws/observations`, automatically reconnecting if the network drops and updating the UI as new events occur.
 - **Transparent AI Mode Badging**: When extracting PDF contracts, the UI explicitly displays whether knowledge was extracted via live LLM or deterministic fallback, complete with provider badges and warning notices if fallbacks occurred.
 
+### Dedicated Case Workspace & Secure Telemetry (How It Works in Plain Language)
+To transition from a developer test harness to an enterprise-grade legal product, the floating test console was removed from the global layout and replaced by a dedicated, deep-linkable Case Workspace:
+1. **The Case Command Center (`/workspace/cases/[caseId]`)**: Clicking "Open Workspace →" on any case in the main dashboard opens a focused environment with 6 dedicated tabs:
+   - **Case Overview**: Displays reference number, internal ID, creation date, and verified tenant organization badge.
+   - **Case Documents**: Drag-and-drop PDF contract uploader that attaches documents directly to this case.
+   - **Extracted Knowledge**: Displays Egyptian Civil Code articles, contractual facts, and binding obligations extracted from ingested PDFs.
+   - **Mesh Test Console**: An integrated control room that allows legal operators and developers to execute real AI cognitive runs on the case (custom prompts, 6-engine integration, or fault recovery) and watch the dynamic multi-agent delegation graph in real time.
+   - **Live Mesh Activity**: Shows real-time cognitive trace events as AI engines analyze files and resolve tasks.
+   - **Case AI Employee**: An interactive conversational assistant grounded strictly in this specific case's verified knowledge.
+2. **Fail-Closed Document Ingestion**: The system never manufactures fake or synthetic cases on the fly. If an upload attempts to target a non-existent or foreign case, it is immediately rejected with a clean 404 error before parsing begins.
+4. **Durable Event History & Reconnection Recovery**: If a lawyer closes their browser or loses internet connection while an AI engine is executing a multi-step analysis, they do not lose the trace events. The client requests all events since their last received sequence number (`GET /api/v1/cases/{caseId}/events?since_sequence=X`), seamlessly restoring the complete trace upon reconnection.
+5. **Transparent AI Telemetry**: The system never pretends deterministic fallbacks are AI-generated. Every execution plan and trace event is stamped with `plan_origin: "gemini_ai"` or `"deterministic_fallback"` along with provider error messages, ensuring complete transparency for legal audit trails.
+
+
 

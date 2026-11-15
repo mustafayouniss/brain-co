@@ -32,7 +32,11 @@ from app.models.task import Task, TaskState
 from app.ring1.models.observation import MemoryRecord
 from app.schemas.case import CaseCreate, CaseResponse
 from app.schemas.task import DocumentUploadResponse, TaskResponse
-from app.services.case_service import CaseAlreadyExistsError, CaseService
+from app.services.case_service import (
+    CaseAlreadyExistsError,
+    CaseNotFoundError,
+    CaseService,
+)
 from app.services.document_processing_service import (
     DocumentProcessingService,
     DocumentValidationError,
@@ -101,13 +105,22 @@ def list_cases(
     db: Session = Depends(get_db),
     context: BrainContext = Depends(get_brain_context),
 ) -> list[CaseResponse]:
-    """Retrieve cases strictly scoped to the authenticated organization."""
+    """Retrieve cases strictly scoped to the authenticated organization and user role."""
+    user_uuid = None
+    if context.user_id:
+        try:
+            user_uuid = UUID(context.user_id)
+        except Exception:
+            user_uuid = None
+
     cases = CaseService.list_cases(
         session=db,
         organization_id=context.organization_id,
         limit=limit,
         offset=offset,
         status_filter=status_filter,
+        user_id=user_uuid,
+        user_role=context.role,
     )
     return [CaseResponse.model_validate(c) for c in cases]
 
@@ -122,16 +135,26 @@ def get_case(
     db: Session = Depends(get_db),
     context: BrainContext = Depends(get_brain_context),
 ) -> CaseResponse:
-    """Retrieve case details enforcing organization ownership."""
-    c = CaseService.get_case(
-        session=db,
-        organization_id=context.organization_id,
-        case_id=case_id,
-    )
-    if not c:
+    """Retrieve case details enforcing CACS case access control."""
+    user_uuid = None
+    if context.user_id:
+        try:
+            user_uuid = UUID(context.user_id)
+        except Exception:
+            user_uuid = None
+
+    try:
+        c = CaseService.validate_case_access(
+            session=db,
+            organization_id=context.organization_id,
+            user_id=user_uuid,
+            user_role=context.role,
+            case_id_or_number=case_id,
+        )
+    except CaseNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found in this organization"},
+            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found or access denied in this organization"},
         )
     return CaseResponse.model_validate(c)
 
@@ -150,12 +173,25 @@ async def upload_case_document(
     context: BrainContext = Depends(get_brain_context),
 ) -> DocumentUploadResponse:
     """Upload a real PDF, register Source, create durable Task+Outbox, and dispatch worker."""
-    # Verify case ownership
-    c = CaseService.get_case(session=db, organization_id=context.organization_id, case_id=case_id)
-    if not c:
+    user_uuid = None
+    if context.user_id:
+        try:
+            user_uuid = UUID(context.user_id)
+        except Exception:
+            user_uuid = None
+
+    try:
+        c = CaseService.validate_case_access(
+            session=db,
+            organization_id=context.organization_id,
+            user_id=user_uuid,
+            user_role=context.role,
+            case_id_or_number=case_id,
+        )
+    except CaseNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found in this organization"},
+            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found or access denied in this organization"},
         )
 
     try:
@@ -202,17 +238,31 @@ def list_case_documents(
     context: BrainContext = Depends(get_brain_context),
 ) -> list[dict]:
     """List all source documents belonging to the specified case."""
-    c = CaseService.get_case(session=db, organization_id=context.organization_id, case_id=case_id)
-    if not c:
+    user_uuid = None
+    if context.user_id:
+        try:
+            user_uuid = UUID(context.user_id)
+        except Exception:
+            user_uuid = None
+
+    try:
+        c = CaseService.validate_case_access(
+            session=db,
+            organization_id=context.organization_id,
+            user_id=user_uuid,
+            user_role=context.role,
+            case_id_or_number=case_id,
+        )
+    except CaseNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found in this organization"},
+            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found or access denied in this organization"},
         )
 
     sources = (
         db.query(Source)
         .filter(
-            Source.case_id == str(case_id),
+            sa.or_(Source.case_id == str(c.id), Source.case_id == c.case_number),
             Source.organization_id == context.organization_id,
         )
         .order_by(Source.created_at.desc())
@@ -243,17 +293,31 @@ def list_case_tasks(
     context: BrainContext = Depends(get_brain_context),
 ) -> list[TaskResponse]:
     """Retrieve all tasks created for the specified case."""
-    c = CaseService.get_case(session=db, organization_id=context.organization_id, case_id=case_id)
-    if not c:
+    user_uuid = None
+    if context.user_id:
+        try:
+            user_uuid = UUID(context.user_id)
+        except Exception:
+            user_uuid = None
+
+    try:
+        c = CaseService.validate_case_access(
+            session=db,
+            organization_id=context.organization_id,
+            user_id=user_uuid,
+            user_role=context.role,
+            case_id_or_number=case_id,
+        )
+    except CaseNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found in this organization"},
+            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found or access denied in this organization"},
         )
 
     tasks = (
         db.query(Task)
         .filter(
-            Task.case_id == str(case_id),
+            sa.or_(Task.case_id == str(c.id), Task.case_id == c.case_number),
             Task.organization_id == context.organization_id,
         )
         .order_by(Task.created_at.desc())
@@ -289,18 +353,32 @@ def get_case_knowledge(
     context: BrainContext = Depends(get_brain_context),
 ) -> dict:
     """Retrieve persisted memory records for a case strictly enforcing case isolation."""
-    c = CaseService.get_case(session=db, organization_id=context.organization_id, case_id=case_id)
-    if not c:
+    user_uuid = None
+    if context.user_id:
+        try:
+            user_uuid = UUID(context.user_id)
+        except Exception:
+            user_uuid = None
+
+    try:
+        c = CaseService.validate_case_access(
+            session=db,
+            organization_id=context.organization_id,
+            user_id=user_uuid,
+            user_role=context.role,
+            case_id_or_number=case_id,
+        )
+    except CaseNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found in this organization"},
+            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found or access denied in this organization"},
         )
 
     stmt = (
         sa.select(MemoryRecord)
         .where(
             MemoryRecord.organization_id == context.organization_id,
-            MemoryRecord.case_id == str(case_id),
+            sa.or_(MemoryRecord.case_id == str(c.id), MemoryRecord.case_id == c.case_number),
         )
         .order_by(MemoryRecord.created_at.desc())
     )
@@ -326,4 +404,65 @@ def get_case_knowledge(
         "organization_id": context.organization_id,
         "total": len(filtered),
         "records": filtered,
+    }
+
+
+@router.get(
+    "/{case_id}/events",
+    summary="Retrieve historical Mesh execution lifecycle events for a Case",
+)
+def get_case_events(
+    case_id: UUID,
+    run_id: Optional[str] = Query(default=None, description="Optional run ID filter"),
+    since_sequence: Optional[int] = Query(default=None, description="Fetch events with sequence > since_sequence"),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    context: BrainContext = Depends(get_brain_context),
+) -> dict:
+    """Retrieve historical events for reconnecting clients, sequence replay, and audit logging."""
+    user_uuid = None
+    if context.user_id:
+        try:
+            user_uuid = UUID(context.user_id)
+        except Exception:
+            user_uuid = None
+
+    try:
+        c = CaseService.validate_case_access(
+            session=db,
+            organization_id=context.organization_id,
+            user_id=user_uuid,
+            user_role=context.role,
+            case_id_or_number=case_id,
+        )
+    except CaseNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CASE_NOT_FOUND", "message": f"Case '{case_id}' not found or access denied in this organization"},
+        )
+
+    from app.services.mesh_event_service import MeshEventService
+    events = MeshEventService.get_events(
+        session=db,
+        organization_id=context.organization_id,
+        case_id=c.case_number or str(c.id),
+        run_id=run_id,
+        since_sequence=since_sequence,
+        limit=limit,
+    )
+    if not events and c.case_number and str(c.id) != c.case_number:
+        events = MeshEventService.get_events(
+            session=db,
+            organization_id=context.organization_id,
+            case_id=str(c.id),
+            run_id=run_id,
+            since_sequence=since_sequence,
+            limit=limit,
+        )
+
+    return {
+        "case_id": str(case_id),
+        "organization_id": context.organization_id,
+        "total": len(events),
+        "events": events,
     }

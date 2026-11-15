@@ -38,7 +38,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https://www.googletagmanager.com https://*.google-analytics.com",
+      "connect-src 'self' ws: wss: http://localhost:8000 ws://localhost:8000 wss://localhost:8000 https://www.googletagmanager.com https://*.google-analytics.com",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",

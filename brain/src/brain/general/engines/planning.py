@@ -174,7 +174,7 @@ class PlanningEngine(BaseEngine, IPlanningEngine):
         ctx = request.context_ref
         context_ref_str = ctx.ref if hasattr(ctx, "ref") else str(ctx) if ctx else None
 
-        steps = await self._generate_plan_steps(goal)
+        steps, plan_origin, provider_err = await self._generate_plan_steps_with_telemetry(goal)
 
         plan = Plan(
             task_id=task_id,
@@ -202,6 +202,8 @@ class PlanningEngine(BaseEngine, IPlanningEngine):
                 "steps": [s.model_dump() for s in plan.steps],
                 "max_replans": plan.max_replans,
                 "replan_count": plan.replan_count,
+                "plan_origin": plan_origin,
+                "provider_error": provider_err,
             },
             context_ref=context_ref_str,
         )
@@ -356,8 +358,8 @@ class PlanningEngine(BaseEngine, IPlanningEngine):
     # Intelligence Layer: step generation
     # -----------------------------------------------------------------
 
-    async def _generate_plan_steps(self, goal: str) -> list[PlanStep]:
-        """Generate structured capability steps for a goal using LLM, or fallback."""
+    async def _generate_plan_steps_with_telemetry(self, goal: str) -> tuple[list[PlanStep], str, Optional[str]]:
+        """Generate structured capability steps for a goal with origin telemetry and provider errors."""
         if self._llm_client:
             prompt = (
                 "You are an AI planner for Ring 1 General Brain. "
@@ -383,10 +385,15 @@ class PlanningEngine(BaseEngine, IPlanningEngine):
                             )
                         )
                 if valid_steps:
-                    return valid_steps
+                    return valid_steps, "gemini_ai", None
 
         # Deterministic fallback plan sequence
-        return self._default_plan_steps(goal)
+        return self._default_plan_steps(goal), "deterministic_fallback", self._last_llm_error
+
+    async def _generate_plan_steps(self, goal: str) -> list[PlanStep]:
+        """Generate structured capability steps for a goal using LLM, or fallback."""
+        steps, _, _ = await self._generate_plan_steps_with_telemetry(goal)
+        return steps
 
     def _default_plan_steps(self, goal: str) -> list[PlanStep]:
         """Deterministic fallback: pipeline with explicit dependencies."""
