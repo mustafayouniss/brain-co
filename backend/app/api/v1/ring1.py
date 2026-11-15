@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_test_operator_user
 from app.core.config import settings
+from app.core.context import BrainContext, get_brain_context
 from app.models.user import User
 from app.ring1.contracts.capabilities import ALL_CAPABILITIES
 from app.ring1.service import Ring1TestRunner, test_run_registry
@@ -147,7 +148,7 @@ async def upload_pdf(
     mode: Literal["normal", "failure_recovery"] = Form("normal", description="Execution mode: normal or failure_recovery"),
     stream: bool = Form(True, description="Whether to stream real-time events via Server-Sent Events (SSE)"),
     db: Session = Depends(get_db),
-    _user: User | None = Depends(get_test_operator_user),
+    context: BrainContext = Depends(get_brain_context),
 ):
     """Process an uploaded PDF through the real Ring 1 Peer-to-Peer Capability Mesh.
 
@@ -163,13 +164,12 @@ async def upload_pdf(
     9. Separate verification query confirms stored facts can be retrieved.
     10. Complete scorecard and structured knowledge returned.
     """
-    server_org = settings.ORGANIZATION_ID
-    if organization_id and organization_id.strip() and organization_id.strip() != server_org:
+    if organization_id and organization_id.strip() and organization_id.strip() != context.organization_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="organization_id does not match this deployment.",
         )
-    clean_org_id = server_org
+    clean_org_id = context.organization_id
 
     clean_case_id = case_id.strip()
     if not clean_case_id:
@@ -253,19 +253,18 @@ def get_case_knowledge(
     case_id: str = Query(..., description="Target Case ID"),
     query: str = Query(default="", description="Optional search filter"),
     db: Session = Depends(get_db),
-    _user: User | None = Depends(get_test_operator_user),
+    context: BrainContext = Depends(get_brain_context),
 ):
     """Query persisted knowledge records directly from PostgreSQL ring1_memory_records table.
 
     Enforces case and organization context isolation server-side.
     """
-    server_org = settings.ORGANIZATION_ID
-    if organization_id and organization_id.strip() and organization_id.strip() != server_org:
+    if organization_id and organization_id.strip() and organization_id.strip() != context.organization_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="organization_id does not match this deployment.",
         )
-    clean_org_id = server_org
+    clean_org_id = context.organization_id
 
     clean_case_id = case_id.strip()
     if not clean_case_id:

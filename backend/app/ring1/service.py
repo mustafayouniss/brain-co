@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 
 from ai.core.services.llm_service import LLMService
 from ai.providers.fake_provider import FakeLLMProvider
+from app.models.case import Case
+from app.services.case_service import CaseService
 from app.ring1.contracts.capabilities import CapabilityRegistry
 from app.ring1.engines.context import ContextEngine
 from app.ring1.engines.memory import BasicMemoryEngine
@@ -60,13 +62,36 @@ class Ring1TestRunner:
 
         session_factory = lambda: self.db_session
 
+        def runner_case_validator(org_id: str, case_id: str, user_id: Any = None) -> bool:
+            if not case_id or not str(case_id).strip():
+                return False
+            norm_case = str(case_id).strip()
+            # 1. Look up by UUID
+            try:
+                case_uuid = uuid.UUID(norm_case)
+                c = CaseService.get_case(self.db_session, org_id, case_uuid)
+                if c is not None:
+                    return True
+            except (ValueError, AttributeError):
+                pass
+            # 2. Look up by case_number within tenant organization
+            c = self.db_session.query(Case).filter(
+                Case.organization_id == org_id,
+                Case.case_number == norm_case,
+            ).first()
+            return c is not None
+
         self.perception = PerceptionEngine(llm_service=self.llm_service, mesh_router=self.router)
         self.observation = ObservationEngine(
             db_session_factory=session_factory,
             llm_service=self.llm_service,
             mesh_router=self.router,
         )
-        self.context = ContextEngine(llm_service=self.llm_service, mesh_router=self.router)
+        self.context = ContextEngine(
+            llm_service=self.llm_service,
+            mesh_router=self.router,
+            case_validator=runner_case_validator,
+        )
         self.memory = BasicMemoryEngine(
             db_session_factory=session_factory,
             llm_service=self.llm_service,

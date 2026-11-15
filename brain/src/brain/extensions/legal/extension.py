@@ -41,6 +41,17 @@ class LegalDomainExtension(IDomainExtension):
     def version(self) -> str:
         return "1.0.0"
 
+    def get_system_prompt(self) -> str:
+        """Return the Legal AI Employee system prompt grounded in Egyptian Civil Law and case workflows."""
+        return (
+            "You are the Legal AI Employee for the Organizational Brain platform (Brain-Co). "
+            "You operate within the Legal workspace to assist legal professionals with case analysis, "
+            "legal knowledge retrieval, Egyptian Civil Law concepts, document summarization, and workflow assistance. "
+            "You are grounded in the organization's legal knowledge base and case intelligence. "
+            "Answer legal and case-related inquiries professionally, accurately, and traceably, citing relevant legal "
+            "principles and distinguishing between established facts and legal interpretations."
+        )
+
     def register_capabilities(self, registry: CapabilityRegistry) -> None:
         """Register legal domain capabilities into the registry."""
         registry.register(

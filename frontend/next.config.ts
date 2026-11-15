@@ -50,6 +50,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   turbopack: {
+    root: "/home/mohamed-alaa",
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],

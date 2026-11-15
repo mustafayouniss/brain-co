@@ -135,6 +135,23 @@ class PdfPipelineService:
             events.append(evt)
             return evt
 
+        # Ensure valid case exists in PostgreSQL session for authoritative validation
+        from app.models.case import Case
+        case_rec = self.runner.db_session.query(Case).filter(
+            Case.organization_id == organization_id,
+            Case.case_number == case_id,
+        ).first()
+        if not case_rec:
+            case_rec = Case(
+                id=uuid.uuid4(),
+                case_number=case_id,
+                title=f"Legal Matter {case_id}",
+                organization_id=organization_id,
+                status="open",
+            )
+            self.runner.db_session.add(case_rec)
+            self.runner.db_session.commit()
+
         # ContextRef for this run
         ctx_ref = ContextRef(
             context_ref_id=f"ctx:pdf:{case_id}",
@@ -340,7 +357,7 @@ class PdfPipelineService:
             },
         )
         yield record_event(
-            source_engine="perception",
+            source_engine="client",
             destination_engine="observation",
             capability=OBSERVATION_RECORD_EVENT,
             event_type="request_dispatched",
@@ -351,7 +368,7 @@ class PdfPipelineService:
         dur_obs = round((time.perf_counter() - t0) * 1000, 2)
         obs_id = resp_obs.payload.get("observation_id")
         yield record_event(
-            source_engine="perception",
+            source_engine="client",
             destination_engine="observation",
             capability=OBSERVATION_RECORD_EVENT,
             event_type="observation_persisted",
@@ -366,8 +383,9 @@ class PdfPipelineService:
         # -------------------------------------------------------------
         t0 = time.perf_counter()
         req_c = MeshRequest(
-            sender_engine="observation",
+            sender_engine="client",
             recipient_capability=CONTEXT_RESOLVE,
+            context_ref=ContextRef(organization_id=organization_id),
             payload={
                 "context_hint": {
                     "organization_id": organization_id,
@@ -377,7 +395,7 @@ class PdfPipelineService:
             },
         )
         yield record_event(
-            source_engine="observation",
+            source_engine="client",
             destination_engine="context",
             capability=CONTEXT_RESOLVE,
             event_type="request_dispatched",
@@ -386,15 +404,33 @@ class PdfPipelineService:
         )
         resp_c = await self.router.dispatch(req_c)
         dur_c = round((time.perf_counter() - t0) * 1000, 2)
+        res_status = resp_c.payload.get("resolution_status")
+        is_explicit = (resp_c.status == ResultStatus.SUCCESS and res_status == ResolutionStatus.EXPLICIT)
+        if is_explicit:
+            ctx_ref = ContextRef(
+                context_ref_id=resp_c.payload.get("context_ref", f"ctx:pdf:{case_id}"),
+                organization_id=organization_id,
+                case_id=resp_c.payload.get("case_id", case_id),
+                domain_id="legal",
+                resolution_status=ResolutionStatus.EXPLICIT,
+            )
+        else:
+            ctx_ref = ContextRef(
+                context_ref_id=resp_c.payload.get("context_ref", f"ctx:pdf:{case_id}"),
+                organization_id=organization_id,
+                case_id=None,
+                domain_id="legal",
+                resolution_status=res_status or ResolutionStatus.UNRESOLVED,
+            )
         yield record_event(
-            source_engine="observation",
+            source_engine="client",
             destination_engine="context",
             capability=CONTEXT_RESOLVE,
             event_type="context_resolved",
-            status="completed" if resp_c.status == ResultStatus.SUCCESS else "failed",
+            status="completed" if is_explicit else "failed",
             duration_ms=dur_c,
             response_envelope=resp_c.model_dump(mode="json"),
-            details={"case_id": case_id, "organization_id": organization_id},
+            details={"case_id": case_id, "organization_id": organization_id, "resolution_status": res_status},
         )
 
         # -------------------------------------------------------------

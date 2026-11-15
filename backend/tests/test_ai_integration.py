@@ -312,3 +312,90 @@ def test_v1_ai_prompt_uses_legal_system_prompt_when_legal_context_requested(clie
         assert req.messages[0].content == LEGAL_SYSTEM_PROMPT
     finally:
         app.dependency_overrides.pop(get_llm_service, None)
+
+
+def test_v1_ai_prompt_cognitive_integration_with_case_grounding(client, auth_headers, db_session):
+    """Verify that providing case_id resolves context, retrieves memory facts, grounds LLM prompt, and records observation."""
+    import uuid
+    from app.models.case import Case
+    from app.ring1.models.observation import MemoryRecord, Observation
+    from app.core.config import settings
+    from app.api.deps import get_llm_service
+    from app.main import app
+
+    org_id = settings.ORGANIZATION_ID
+    case_number = f"CASE-COG-{uuid.uuid4().hex[:6]}"
+    case = Case(
+        id=uuid.uuid4(),
+        case_number=case_number,
+        title="Test Cognitive Matter",
+        organization_id=org_id,
+        status="open",
+    )
+    db_session.add(case)
+
+    # Store memory fact for this case
+    fact_record = MemoryRecord(
+        id=uuid.uuid4(),
+        organization_id=org_id,
+        case_id=case_number,
+        record_type="contract_fact",
+        payload={
+            "facts": [
+                {"statement": "Article 147 mandates strict compliance with Egyptian civil contract laws."}
+            ]
+        },
+        status="active",
+    )
+    db_session.add(fact_record)
+    db_session.commit()
+
+    fake_provider = FakeLLMProvider(custom_response="Based on Article 147, compliance is strictly required.")
+    fake_service = LLMService(provider=fake_provider)
+
+    app.dependency_overrides[get_llm_service] = lambda: fake_service
+    try:
+        response = client.post(
+            "/api/v1/ai/prompt",
+            json={
+                "prompt": "What does Article 147 mandate?",
+                "context": "legal",
+                "case_id": case_number,
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["retrieved_facts_count"] >= 1
+        assert data["context_ref_id"] is not None
+        assert data["observation_id"] is not None
+
+        # Verify LLM prompt was grounded with the retrieved fact
+        assert len(fake_provider.recorded_requests) == 1
+        user_msg = fake_provider.recorded_requests[0].messages[1].content
+        assert "Verified Organizational Case Facts" in user_msg
+        assert "Article 147 mandates strict compliance" in user_msg
+
+        # Verify observation was persisted in PostgreSQL
+        obs = db_session.get(Observation, uuid.UUID(data["observation_id"]))
+        assert obs is not None
+        assert obs.event_type == "ai_assistant_query"
+        assert obs.organization_id == org_id
+        assert obs.case_id == case_number
+    finally:
+        app.dependency_overrides.pop(get_llm_service, None)
+
+
+def test_v1_ai_prompt_fails_closed_on_invalid_or_unauthorized_case(client, auth_headers):
+    """Verify that supplying an unauthorized or non-existent case_id fails closed with 403."""
+    response = client.post(
+        "/api/v1/ai/prompt",
+        json={
+            "prompt": "Summarize case facts",
+            "context": "legal",
+            "case_id": "non-existent-case-uuid-99999",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 403
+

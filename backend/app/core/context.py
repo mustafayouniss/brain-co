@@ -77,19 +77,6 @@ def get_brain_context(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token_org_id = payload.get("org_id") or payload.get("organization_id")
-    # Strict fail-closed: organization identity must exist
-    if not token_org_id:
-        # Fallback to configured org if single-org instance per D-004
-        token_org_id = configured_org
-
-    if token_org_id != configured_org:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "ORGANIZATION_IDENTITY_MISMATCH", "message": "Token does not belong to this instance organization"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
     sub = payload.get("sub", "")
     try:
         user_uuid = uuid.UUID(sub)
@@ -104,7 +91,30 @@ def get_brain_context(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    role = user.role
+    token_org_id = payload.get("org_id") or payload.get("organization_id")
+    from app.services.organization_service import OrganizationService
+
+    membership = None
+    if token_org_id:
+        membership = OrganizationService.get_user_membership(db, user.id, token_org_id)
+        if not membership:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "ORGANIZATION_MEMBERSHIP_DENIED", "message": f"User is not an active member of organization '{token_org_id}'"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        active_org_id = token_org_id
+    else:
+        user_orgs = OrganizationService.list_user_organizations(db, user.id)
+        if user_orgs:
+            active_org_id = user_orgs[0][0].id
+            membership = user_orgs[0][1]
+        else:
+            active_org_id = configured_org
+
+    org = OrganizationService.get_organization(db, active_org_id)
+    domain_id = org.domain if org else (x_domain_id or request.query_params.get("domain_id") or "legal")
+    role = membership.role if membership else user.role
     is_admin = role == "admin"
     validation_auth = is_admin  # Only admin has validation authority in Ring 1 baseline
 
@@ -114,7 +124,7 @@ def get_brain_context(
         case_id = request.query_params.get("case_id")
 
     return BrainContext(
-        organization_id=token_org_id,
+        organization_id=active_org_id,
         user_id=str(user.id),
         case_id=case_id,
         scope_id=case_id,

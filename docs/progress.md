@@ -1,5 +1,125 @@
 # Progress
 
+- **Scoped Mesh Workspace, CACS & WebSocket Ticket Security Milestone (2026-11-15)**:
+  - **Alembic Migration (`f82a1b3c4d5e`)**:
+    - Prepared reversible migration for `mesh_events`, `ws_tickets`, and `case_assignments`.
+    - Verified upgrade, downgrade, and re-upgrade cycles against test DB; active dev DB preserved at `e71f6a9b0c3d`.
+  - **WebSocket Single-Use Ticket Mechanism**:
+    - Implemented `TicketService` with SHA-256 token hashing and PostgreSQL atomic single-use consumption.
+    - Expiry enforced at 60 seconds; raw token never stored or logged.
+    - Built backend endpoint `POST /api/v1/auth/ws-ticket` and Next.js proxy route `/api/auth/ws-ticket`.
+  - **Explicit Case Access Control Strategy (CACS)**:
+    - Implemented `CaseService.validate_case_access` and `CaseService.assign_user_to_case`.
+    - Enforced admin organization-wide access; employee restricted to creator or explicit assignment. Case status 'open' does not independently grant access. Fail-closed 404 behavior.
+  - **WebSocket Manager Remediation**:
+    - Remediated `ws_manager.py` with dual-boundary isolation (Boundary A: tenant; Boundary B: case).
+    - Guaranteed unscoped subscribers never receive case-private event payloads.
+  - **Verification Baseline**:
+    - Full test suite: **445 passed in 47.44s** (100% pass).
+    - Next.js build: **36 routes compiled cleanly in 3.3s** (0 errors).
+
+- **Brain-Co Multi-Tenant SaaS Foundation Milestone (2026-11-15)**:
+  - **Live Gemini Provider Restored**:
+    - Recovered `.env` key, enabled developer mode settings validation (`ENVIRONMENT=development`, `ALLOW_TEST_OPERATOR=true`).
+    - Updated active provider model to `gemini-3.5-flash-lite`, resolving the deprecated 404 error.
+    - Stripped code fences in `LegalStructuredKnowledgeExtractor._extract_with_llm`, enabling valid JSON parsing. Verified live responses, token tracking, and PostgreSQL observation recording.
+  - **Multi-Tenant Database Models & Migration (`e71f6a9b0c3d`)**:
+    - Created `Organization` (string PK `id`, `name`, unique `slug`, `domain`, `is_active`, `settings`, timestamps) and `OrganizationMembership` (UUID PK, `organization_id`, `user_id`, `role IN ('admin', 'employee')`, unique constraint on `(organization_id, user_id)`).
+    - Preserved existing data by automatically seeding `'org-brain-corp'` and establishing admin memberships for existing users.
+  - **Backend SaaS Services & Authentication Endpoints**:
+    - Implemented `OrganizationService` for atomic signup, organization retrieval, membership validation, and employee invitation.
+    - Implemented `POST /api/v1/auth/register-organization`, updated `POST /login` with tenant claims, implemented `POST /switch-organization`, and updated `GET /me`.
+    - Created `backend/app/api/v1/organizations.py` (`GET /me`, `GET /members`, `POST /members`).
+    - Enforced server-authoritative membership in `get_brain_context` on every request.
+  - **Legal Domain Extension Separation**:
+    - Added `get_system_prompt()` to `IDomainExtension` and implemented it in `LegalDomainExtension`.
+    - Added `get_domain_extension(domain_id)` registry in `brain.extensions`.
+    - Refactored `backend/app/api/v1/ai.py` to decouple from hardcoded legal prompts.
+  - **Organization-Aware PDF Pipeline**:
+    - Updated `/api/v1/ring1/upload-pdf` and `/api/v1/ring1/knowledge` to derive tenant identity strictly from authenticated `BrainContext`, rejecting mismatched IDs with HTTP 403.
+  - **Frontend SaaS User Journey**:
+    - Built Organization Registration Screen (`/onboarding/account`) and proxy route `/api/auth/register`.
+    - Updated `/api/auth/session` to return active organization, domain, and role.
+    - Upgraded `/workspace` UI to display active tenant name, domain, role, and tenant ID.
+    - Added interactive Cases panel, Team & Members panel, PDF ingestion dropzone, and AI Employee.
+  - **Five Real Organizations Seeded & Isolated**:
+    - Seeded and verified 5 real organizations in development database and automated test suite:
+      1. Cairo Legal Partners (`org-3c6a0d0df98e`, `admin@cairolegal.com`)
+      2. Alexandria Law Chambers (`org-44e51dadadfb`, `admin@alexchambers.com`)
+      3. Nile Dispute Resolution (`org-2d703daea279`, `admin@niledispute.com`)
+      4. Giza Corporate Counsel (`org-2fae0f11da27`, `admin@gizacorp.com`)
+      5. Red Sea Legal Advisory (`org-290848983e5c`, `admin@redsealegal.com`)
+    - Proved cross-tenant isolation in `test_saas_organization_isolation.py`.
+    - Verified registration and workspace flow in live browser via browser subagent.
+  - **Verification Baseline**:
+    - Full repository test suite: **430 passed in 42.74s** (0 failed, 0 skipped).
+    - Next.js production build: **35 routes compiled in 3.8s** with 0 errors.
+
+- **Ring 1 Architectural Remediation Milestone (2026-11-15)**:
+  - **Problem 1 (P0): Production Context API & Case Validator Wiring**:
+    - Wired authoritative database-backed `case_validator` in `backend/app/api/v1/context.py` using `CaseService.get_case()` and `Case.case_number` lookups within the tenant organization.
+    - Wired `runner_case_validator` into `Ring1TestRunner.__init__` in `backend/app/ring1/service.py` to validate cases against PostgreSQL session.
+    - Guaranteed genuine `ResolutionStatus.EXPLICIT` resolution for valid tenant cases and fail-closed 403 Forbidden / `UNRESOLVED` for foreign or non-existent cases.
+  - **Problem 2 (P0): Execution Event Provenance & Status Integrity**:
+    - Eliminated fabricated `source_engine="observation"` in `test_scenario_service.py` and `pdf_pipeline_service.py`; event `source_engine` now strictly matches `MeshRequest.sender_engine`.
+    - Evaluated true context engine outcomes before recording `context_resolved`: records `status="completed"` only when `is_explicit` succeeds, otherwise `status="failed"`.
+    - Eliminated synthetic `ContextRef(..., resolution_status=ResolutionStatus.EXPLICIT)` manufacturing on failed context steps.
+  - **Problem 3 (P0): Explicit AI Extraction Mode & Fallback Transparency**:
+    - Extended `DocumentStructuredKnowledge` with `extraction_mode: str`, `fallback_occurred: bool`, `fallback_reason: Optional[str]`, and `provider_name: Optional[str]`.
+    - Updated `LegalStructuredKnowledgeExtractor`: transparently sets `extraction_mode="llm"` with provider name on success; records `extraction_mode="deterministic"`, `fallback_occurred=True`, and exception message on LLM failure.
+    - Updated frontend types (`types.ts`) and UI (`extracted-knowledge-tab.tsx`) with warning banners and provenance badges.
+  - **Problem 4 (P0): AI Employee Connected to Cognitive Architecture**:
+    - Connected `/api/v1/ai/prompt` to full 5-stage cognitive pipeline: Context boundary resolution -> Knowledge retrieval from PostgreSQL memory -> Grounded prompt augmentation with verified facts -> LLM generation -> Audit observation event recording in PostgreSQL.
+    - Added comprehensive integration tests in `backend/tests/test_ai_integration.py` verifying context resolution, memory retrieval grounding, and fail-closed 403 behavior.
+  - **Problem 5 (P1): Gemini Provider Integration & Sandbox Timeout Verification**:
+    - Aligned default Gemini model in `ai/config/ai_config.py` and `ai/providers/gemini_provider.py` to production standard `gemini-1.5-flash`.
+    - Added unit test coverage for `GeminiProvider` initialization, availability, and completion in `ai/tests/test_providers.py`.
+    - Verified sandbox network isolation: live external HTTP connections time out (exit code 28); documented honestly without fabricating live cloud calls.
+  - **Problem 6 (P1): Autonomous Multi-Hop Engine Delegation**:
+    - Verified autonomous `ObservationEngine` follow-up delegation to `PlanningEngine.create_plan` via `MeshRouter`.
+    - Added end-to-end integration test in `backend/tests/ring1/test_e2e_mesh_integration.py` proving autonomous plan creation from observed breach events.
+  - **Problem 7 (P1): Frontend Workspace & Next.js 16.4.5 Alignment**:
+    - Aligned `frontend/package.json` dependencies to patched Next.js `16.4.5`.
+    - Implemented real-time WebSocket client hook `frontend/src/hooks/use-observation-ws.ts` for `/api/v1/ws/observations`.
+    - Implemented Brain system status API route `frontend/src/app/api/brain/status/route.ts`.
+    - Connected workspace panels (`OverviewPanel`, `KnowledgePanel`, `AIEmployeePanel`) to live backend APIs.
+  - **Automated Verification Baseline**:
+    - Full backend test suite: **424 passed in 10.94s** (0 failed, 0 skipped).
+    - Frontend TypeScript typecheck: **0 errors** (`tsc --noEmit` passed).
+
+
+- **High-Severity Security & Architecture Remediation Milestone (2026-11-14)**:
+  - **SEC-01: Tenant-Scoped Idempotency Keys (Fully Remediated)**:
+    - Scoped `idempotency_key` unique constraints to `(organization_id, idempotency_key)` composite indexes in Alembic migration `c59d4e7f8a1b` across `ring1_observations` and `ring1_memory_records`.
+    - Made `organization_id: str` strictly required without default across `IObservationStore` and `IMemoryStore` protocols, removing `Optional[str] = None`.
+    - Enforced non-empty string validation for `organization_id` in `InMemoryObservationStore`, `InMemoryMemoryStore`, `SqlAlchemyObservationStore`, and `SqlAlchemyMemoryStore` across both idempotency lookups (`find_by_idempotency_key`) and persistence methods (`save` / `save_record`), raising `ValueError` on missing or blank values.
+    - Secured `ObservationEngine.handle_record_event` and `record_observation`: requires verified server-side context (`context_ref`), validates non-empty `organization_id`, rejects missing context, unverified string context references, payload tenant spoofing, and payload case mismatch; eliminated `"org-default"` fallback.
+    - Secured `BasicMemoryEngine.handle_store_record` and `store_candidate`: validates non-empty `organization_id` from authorized context, rejects string context references, and rejects payload tenant/case spoofing.
+    - Enforced `nullable=False` on `Observation.organization_id` and `MemoryRecord.organization_id` in SQLAlchemy models and applied Alembic migration `d60e5f8a9b2c_enforce_not_null_organization_id.py` with pre-check safeguards.
+    - Authored 12 comprehensive adversarial tests in `backend/tests/ring1/test_idempotency_tenant_isolation.py` (100% passing).
+  - **SEC-02-F01: Fail-Closed Case Validation Remediation (2026-11-15)**:
+    - Remediated fail-open case authorization in `ContextEngine.resolve_context()` and `ContextEngine.handle_resolve()`: client-supplied `case_id` values are strictly rejected with `AUTHORIZATION_DENIED` when `self._case_validator is None` or when the validator returns `False`.
+    - Protected exception boundaries: if `self._case_validator` raises an exception, the traceback is logged internally via Python logger and a safe generic `AUTHORIZATION_DENIED` error is returned to avoid exposing database or server internals.
+    - Input normalization: added validation rejecting empty or whitespace-only scope strings with `INVALID_SCOPE` / `INVALID_PAYLOAD`.
+    - Trusted server case provenance: external clients (`sender_engine == "client"`) cannot bypass case validation by providing `case_id` inside `ContextRef`. Only genuinely trusted internal mesh delegations (`sender_engine != "client"`) carry pre-authorized server cases.
+    - LLM fallback safety: if an LLM-inferred `case_id` cannot be verified by `self._case_validator`, `case_id` is stripped to `None`, `resolution_status` downgraded to `AMBIGUOUS`, `scope_constraints` purged of `case_id`, and `ResultStatus.NEEDS_CLARIFICATION` returned, preventing unverified cases from reaching downstream retrieval or storage.
+    - Expanded adversarial test suite to 21 tests in `backend/tests/ring1/test_context_security_adversarial.py` (100% passing).
+    - Full test suite baseline: 364/364 tests passing (340 backend & architecture, 24 data-engineering; 0 failures). Production DI wiring remains tracked under SEC-02-F02.
+  - **SEC-02 & ENG-01: Context Engine Scope Trust Boundaries & LLM Fallback Reachability**:
+    - Refactored `ContextEngine.handle_resolve` and `resolve_context` to fail closed if server-side verified `organization_id` is absent.
+    - Strictly rejected client `context_hint` attempts to override `organization_id` or `case_id` with `AUTHORIZATION_DENIED` (mesh) and HTTP 403 (REST API).
+    - Added optional `case_validator` injection to `ContextEngine` to verify client-proposed case IDs against tenant database records.
+    - Eliminated ENG-01 dead code: updated `_resolve_deterministic` to return `ResolutionStatus.INSUFFICIENT_DATA` when case scope is missing, restoring reachability of `_try_llm_resolution`.
+    - Enforced that LLM inference results clamp `organization_id` strictly to verified `server_org`.
+    - Authored 8 dedicated tests in `backend/tests/ring1/test_context_security_adversarial.py` (100% passing).
+  - **SEC-05: Memory Validation Authority Lifecycle Enforcement**:
+    - Fixed `BasicMemoryEngine.handle_store_record` to store records as `'candidate'` by default, eliminating hardcoded `'active'` status.
+    - Strictly enforced that only verified `validation_authority=True` context can store records as `'validated'` or `'active'`.
+    - Prevented unauthenticated actors from promoting candidates via `validate_candidate`.
+    - Verified retrieval exclusion: candidate records are excluded from standard user searches and only visible to authorized reviewers when explicitly requested.
+    - Authored 5 dedicated tests in `backend/tests/ring1/test_memory_lifecycle_security.py` (100% passing).
+  - **Test Baseline**: 399/399 tests passing across full repository (305 backend, 16 architecture, 78 ai/data-engineering; 0 failures).
+
 - **General Brain Physical Extraction Milestone (2026-10-30)**:
   - **Standalone Package**: Extracted General Brain into standalone package `brain-co-core==0.1.0` under `brain/src/brain/` with standard `src/` layout.
   - **Physical Engine & Runtime Extraction**: Canonical implementations of Perception, Observation, Context, Memory, Retrieval, Planning, MeshRouter, RuntimeDispatcher, PlanStepExecutor, and DomainRegistry now reside in `brain/src/brain/general/`.

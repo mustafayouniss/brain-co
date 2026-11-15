@@ -72,8 +72,8 @@ def test_perception_engine_processes_sales_content():
 
 
 def test_context_engine_resolves_generic_domain_scope():
-    """ContextEngine resolves a non-legal generic domain scope (e.g., logistics voyage)."""
-    engine = ContextEngine()
+    """ContextEngine resolves a non-legal generic domain scope (e.g., logistics voyage) with validator."""
+    engine = ContextEngine(case_validator=lambda org, scope, user: True)
     assert isinstance(engine, IContextEngine)
 
     context = BrainContext(

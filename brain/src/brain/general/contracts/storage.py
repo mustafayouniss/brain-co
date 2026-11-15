@@ -16,7 +16,11 @@ from brain.general.contracts.protocols import ObservationFeedResult
 class IObservationStore(Protocol):
     """Protocol for observation persistence and feed retrieval."""
 
-    async def find_by_idempotency_key(self, idempotency_key: str) -> Optional[dict[str, Any]]:
+    async def find_by_idempotency_key(
+        self,
+        idempotency_key: str,
+        organization_id: str,
+    ) -> Optional[dict[str, Any]]:
         """Return existing observation payload by idempotency key if found."""
         ...
 
@@ -42,7 +46,11 @@ class IObservationStore(Protocol):
 class IMemoryStore(Protocol):
     """Protocol for knowledge records and candidate lifecycle persistence."""
 
-    async def find_by_idempotency_key(self, idempotency_key: str) -> Optional[dict[str, Any]]:
+    async def find_by_idempotency_key(
+        self,
+        idempotency_key: str,
+        organization_id: str,
+    ) -> Optional[dict[str, Any]]:
         """Return existing memory record by idempotency key if found."""
         ...
 

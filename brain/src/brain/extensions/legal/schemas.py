@@ -100,6 +100,10 @@ class DocumentStructuredKnowledge(BaseModel):
     entities: list[ExtractedEntity] = Field(default_factory=list)
     facts: list[ExtractedFact] = Field(default_factory=list)
     obligations: list[ExtractedObligation] = Field(default_factory=list)
+    extraction_mode: str = Field(default="deterministic", description="Mode used: 'llm', 'deterministic', or 'hybrid'")
+    fallback_occurred: bool = Field(default=False, description="True if LLM failed and deterministic fallback was used")
+    fallback_reason: Optional[str] = Field(default=None, description="Detailed reason for fallback if applicable")
+    provider_name: Optional[str] = Field(default=None, description="Underlying LLM provider if extracted via LLM")
 
 
 class PDFPageContent(BaseModel):

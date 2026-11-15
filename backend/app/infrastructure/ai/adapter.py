@@ -31,21 +31,36 @@ class LLMServiceAdapter(ILLMClient):
     def __init__(
         self,
         llm_service: LLMService,
-        default_model: str = DEFAULT_BACKEND_MODEL,
+        default_model: Optional[str] = None,
     ) -> None:
         self._llm_service = llm_service
-        self._default_model = default_model
+        provider = getattr(llm_service, "_provider", None)
+        provider_model = getattr(provider, "_default_model", None) if provider else None
+        self._default_model = default_model or provider_model or DEFAULT_BACKEND_MODEL
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         """Execute completion via Backend LLMService."""
         try:
             # Map model hint or fall back to default backend configured model
+            provider = getattr(self._llm_service, "_provider", None)
+            provider_id = provider.get_provider_id() if provider and hasattr(provider, "get_provider_id") else ""
             target_model = self._default_model
             if request.model_hint:
-                if request.model_hint == "reasoning":
-                    target_model = "o3-mini"
-                elif request.model_hint == "fast":
-                    target_model = "gpt-4o-mini"
+                if provider_id == "gemini":
+                    if request.model_hint == "reasoning":
+                        target_model = "gemini-2.5-pro" if "pro" in str(self._default_model) else self._default_model
+                    elif request.model_hint == "fast":
+                        target_model = self._default_model
+                elif provider_id == "deepseek":
+                    if request.model_hint == "reasoning":
+                        target_model = "deepseek-reasoner"
+                    elif request.model_hint == "fast":
+                        target_model = "deepseek-chat"
+                else:
+                    if request.model_hint == "reasoning":
+                        target_model = "o3-mini"
+                    elif request.model_hint == "fast":
+                        target_model = "gpt-4o-mini"
 
             backend_messages = [
                 BackendLLMMessage(

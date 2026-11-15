@@ -17,9 +17,15 @@ export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser(token);
     return NextResponse.json({
+      id: user.id,
       email: user.email,
       full_name: user.full_name,
       role: user.role,
+      active_organization_id: user.active_organization_id,
+      active_organization_name: user.active_organization_name,
+      active_organization_slug: user.active_organization_slug,
+      active_domain: user.active_domain,
+      organizations: user.organizations || [],
     });
   } catch (error) {
     return NextResponse.json(

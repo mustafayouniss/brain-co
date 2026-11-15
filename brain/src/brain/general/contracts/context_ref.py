@@ -48,6 +48,7 @@ class ContextRef(BaseModel):
     resolution_status: ResolutionStatus = ResolutionStatus.INSUFFICIENT_DATA
     ambiguities: list[str] = Field(default_factory=list)
     scope_constraints: list[str] = Field(default_factory=list)
+    validation_authority: bool = False
 
     @model_validator(mode="before")
     @classmethod

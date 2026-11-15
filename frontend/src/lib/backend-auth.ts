@@ -20,6 +20,14 @@ export interface LoginResponse {
   token_type: string;
 }
 
+export interface UserOrganizationItem {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  domain: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -27,6 +35,39 @@ export interface User {
   role: "admin" | "employee";
   is_active: boolean;
   created_at: string;
+  active_organization_id?: string;
+  active_organization_name?: string;
+  active_organization_slug?: string;
+  active_domain?: string;
+  organizations?: UserOrganizationItem[];
+}
+
+export interface RegisterOrganizationRequest {
+  company_name: string;
+  admin_full_name: string;
+  admin_email: string;
+  password: string;
+  domain?: string;
+}
+
+export interface RegisterOrganizationResponse {
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+    domain: string;
+    is_active: boolean;
+    created_at: string;
+  };
+  user: User;
+  membership: {
+    id: string;
+    role: "admin" | "employee";
+    is_active: boolean;
+    created_at: string;
+  };
+  access_token: string;
+  token_type: string;
 }
 
 export interface ApiError {
@@ -35,6 +76,28 @@ export interface ApiError {
     message: string;
     details?: unknown;
   };
+}
+
+/**
+ * Register a new organization, admin account, and initial membership
+ */
+export async function registerOrganizationToBackend(
+  data: RegisterOrganizationRequest
+): Promise<RegisterOrganizationResponse> {
+  const response = await fetch(`${BACKEND_API_URL}/auth/register-organization`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = (await response.json()) as ApiError;
+    throw new Error(error.error?.message || "Organization registration failed");
+  }
+
+  return response.json() as Promise<RegisterOrganizationResponse>;
 }
 
 /**

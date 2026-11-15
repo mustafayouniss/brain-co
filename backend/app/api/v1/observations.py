@@ -45,20 +45,17 @@ async def create_observation(
     case_id = payload.case_id or payload.scope_id or context.effective_scope_id
     idempotency_key = payload.idempotency_key
 
-    # Duplicate check if idempotency_key provided
+    # Duplicate check if idempotency_key provided (strictly scoped to organization)
     if idempotency_key:
         existing = await run_in_threadpool(
             lambda: db.query(Observation)
-            .filter(Observation.idempotency_key == idempotency_key)
+            .filter(
+                Observation.organization_id == context.organization_id,
+                Observation.idempotency_key == idempotency_key,
+            )
             .first()
         )
         if existing:
-            # Enforce tenant isolation on duplicate
-            if existing.organization_id != context.organization_id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail={"code": "NOT_FOUND", "message": "Observation not found"},
-                )
             return ObservationResponse(
                 id=existing.id,
                 event_id=existing.event_id,
