@@ -8,6 +8,7 @@ from app.api.v1.context import router as context_router
 from app.api.v1.health import router as health_router
 from app.api.v1.memory import router as memory_router
 from app.api.v1.observations import router as observations_router
+from app.api.v1.organizations import router as organizations_router
 from app.api.v1.retrieval import router as retrieval_router
 from app.api.v1.ring1 import router as ring1_router
 from app.api.v1.sources import router as sources_router
@@ -19,6 +20,7 @@ api_router = APIRouter()
 api_router.include_router(health_router, tags=["health"])
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 api_router.include_router(users_router, prefix="/users", tags=["users"])
+api_router.include_router(organizations_router, prefix="/organizations", tags=["organizations"])
 api_router.include_router(cases_router, prefix="/cases", tags=["cases"])
 api_router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(sources_router, prefix="/sources", tags=["sources"])

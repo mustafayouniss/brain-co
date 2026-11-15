@@ -53,3 +53,7 @@ class IDomainExtension(ABC):
     ) -> dict[str, Any]:
         """Perform domain-specific knowledge extraction and interpretation."""
         ...
+
+    def get_system_prompt(self) -> Optional[str]:
+        """Return specialized domain system prompt for AI Employee grounding."""
+        return None

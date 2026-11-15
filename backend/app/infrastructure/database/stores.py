@@ -37,17 +37,26 @@ class SqlAlchemyObservationStore(IObservationStore):
     def __init__(self, db_session_factory: Callable[[], Session]) -> None:
         self._session_factory = db_session_factory
 
-    async def find_by_idempotency_key(self, idempotency_key: str) -> Optional[dict[str, Any]]:
+    async def find_by_idempotency_key(
+        self,
+        idempotency_key: str,
+        organization_id: str,
+    ) -> Optional[dict[str, Any]]:
+        clean_org = str(organization_id).strip() if organization_id is not None else ""
+        if not clean_org:
+            raise ValueError("organization_id must be a non-empty string for idempotency lookup")
+
         session: Session = self._session_factory()
         try:
-            obs = (
-                session.query(Observation)
-                .filter(Observation.idempotency_key == idempotency_key)
-                .first()
+            stmt = select(Observation).where(
+                Observation.idempotency_key == idempotency_key,
+                Observation.organization_id == clean_org,
             )
+            obs = session.execute(stmt).scalar_one_or_none()
             if obs is None:
                 return None
             return {
+                "id": str(obs.id),
                 "observation_id": str(obs.id),
                 "event_id": obs.event_id,
                 "event_type": obs.event_type,
@@ -64,9 +73,14 @@ class SqlAlchemyObservationStore(IObservationStore):
             session.close()
 
     async def save(self, observation: dict[str, Any]) -> str:
+        raw_org = observation.get("organization_id")
+        clean_org = str(raw_org).strip() if raw_org is not None else ""
+        if not clean_org:
+            raise ValueError("observation['organization_id'] must be a non-empty string")
+
         session: Session = self._session_factory()
         try:
-            obs_id = observation.get("observation_id")
+            obs_id = observation.get("observation_id") or observation.get("id")
             uid = uuid.UUID(str(obs_id)) if obs_id else uuid.uuid4()
             
             raw_ts = observation.get("timestamp")
@@ -87,7 +101,7 @@ class SqlAlchemyObservationStore(IObservationStore):
                 actor_ref=observation.get("actor_ref"),
                 context_ref=observation.get("context_ref"),
                 case_id=observation.get("case_id"),
-                organization_id=observation.get("organization_id"),
+                organization_id=clean_org,
                 payload=observation.get("payload", {}),
                 metadata_=observation.get("metadata", {}),
                 trace_id=observation.get("trace_id"),
@@ -189,16 +203,26 @@ class SqlAlchemyMemoryStore(IMemoryStore):
     def __init__(self, db_session_factory: Callable[[], Session]) -> None:
         self._session_factory = db_session_factory
 
-    async def find_by_idempotency_key(self, idempotency_key: str) -> Optional[dict[str, Any]]:
+    async def find_by_idempotency_key(
+        self,
+        idempotency_key: str,
+        organization_id: str,
+    ) -> Optional[dict[str, Any]]:
+        clean_org = str(organization_id).strip() if organization_id is not None else ""
+        if not clean_org:
+            raise ValueError("organization_id must be a non-empty string for idempotency lookup")
+
         session: Session = self._session_factory()
         try:
             stmt = select(MemoryRecord).where(
-                MemoryRecord.idempotency_key == idempotency_key
+                MemoryRecord.idempotency_key == idempotency_key,
+                MemoryRecord.organization_id == clean_org,
             )
             rec = session.execute(stmt).scalar_one_or_none()
             if rec is None:
                 return None
             return {
+                "id": str(rec.id),
                 "record_id": str(rec.id),
                 "record_type": rec.record_type,
                 "status": rec.status,
@@ -215,9 +239,14 @@ class SqlAlchemyMemoryStore(IMemoryStore):
             session.close()
 
     async def save_record(self, record: dict[str, Any]) -> str:
+        raw_org = record.get("organization_id")
+        clean_org = str(raw_org).strip() if raw_org is not None else ""
+        if not clean_org:
+            raise ValueError("record['organization_id'] must be a non-empty string")
+
         session: Session = self._session_factory()
         try:
-            rec_id = record.get("record_id")
+            rec_id = record.get("record_id") or record.get("id")
             uid = uuid.UUID(str(rec_id)) if rec_id else uuid.uuid4()
             source_obs_id = record.get("source_observation_id")
             parsed_obs_id = None
@@ -232,7 +261,7 @@ class SqlAlchemyMemoryStore(IMemoryStore):
                 record_type=record.get("record_type", "fact_candidate"),
                 context_ref=record.get("context_ref"),
                 case_id=record.get("case_id"),
-                organization_id=record.get("organization_id"),
+                organization_id=clean_org,
                 payload=record.get("payload", {}),
                 metadata_=record.get("metadata", {}),
                 trace_id=record.get("trace_id"),
@@ -274,6 +303,7 @@ class SqlAlchemyMemoryStore(IMemoryStore):
             if rec is None:
                 return None
             return {
+                "id": str(rec.id),
                 "record_id": str(rec.id),
                 "record_type": rec.record_type,
                 "status": rec.status,

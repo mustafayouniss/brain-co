@@ -60,8 +60,17 @@ class LegalStructuredKnowledgeExtractor:
                     return llm_knowledge
             except Exception as exc:
                 logger.warning("LLM structured legal extraction failed, falling back to deterministic: %s", exc)
+                return self._extract_deterministic(
+                    extraction_result,
+                    fallback_occurred=True,
+                    fallback_reason=str(exc),
+                )
 
-        return self._extract_deterministic(extraction_result)
+        return self._extract_deterministic(
+            extraction_result,
+            fallback_occurred=False,
+            fallback_reason=None,
+        )
 
     async def _extract_with_llm(
         self,
@@ -108,6 +117,13 @@ class LegalStructuredKnowledgeExtractor:
 
         response = await self.llm_service.complete(req)
         content_str = response.content.strip()
+        if content_str.startswith("```"):
+            lines = content_str.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            content_str = "\n".join(lines).strip()
         data = json.loads(content_str)
 
         facts = [
@@ -153,6 +169,21 @@ class LegalStructuredKnowledgeExtractor:
             else DocumentType.GENERAL_DOCUMENT
         )
 
+        provider_name = None
+        if hasattr(self.llm_service, "_llm_service"):
+            p = getattr(self.llm_service._llm_service, "_provider", None)
+            if p and hasattr(p, "get_provider_id"):
+                provider_name = p.get_provider_id()
+        if not provider_name:
+            if hasattr(self.llm_service, "provider"):
+                provider_name = getattr(self.llm_service.provider, "name", None) or getattr(self.llm_service.provider, "provider_id", "llm")
+            elif hasattr(self.llm_service, "provider_id"):
+                provider_name = getattr(self.llm_service, "provider_id")
+            elif hasattr(self.llm_service, "get_provider_id"):
+                provider_name = self.llm_service.get_provider_id()
+            else:
+                provider_name = "llm"
+
         return DocumentStructuredKnowledge(
             document_id=extraction_result.document_id,
             document_type=doc_type,
@@ -163,11 +194,17 @@ class LegalStructuredKnowledgeExtractor:
             entities=entities,
             facts=facts,
             obligations=obligations,
+            extraction_mode="llm",
+            fallback_occurred=False,
+            fallback_reason=None,
+            provider_name=provider_name,
         )
 
     def _extract_deterministic(
         self,
         extraction_result: PDFExtractionResult,
+        fallback_occurred: bool = False,
+        fallback_reason: Optional[str] = None,
     ) -> DocumentStructuredKnowledge:
         """Deterministic regex and keyword extractor for legal documents."""
         combined = extraction_result.combined_text
@@ -280,4 +317,8 @@ class LegalStructuredKnowledgeExtractor:
             entities=entities,
             facts=facts,
             obligations=obligations,
+            extraction_mode="deterministic",
+            fallback_occurred=fallback_occurred,
+            fallback_reason=fallback_reason,
+            provider_name=None,
         )

@@ -98,8 +98,11 @@ export interface DocumentStructuredKnowledge {
   facts: ExtractedFact[];
   obligations: ExtractedObligation[];
   uncertainties: string[];
-  total_facts_count: number;
+  total_facts_count?: number;
   extraction_mode: string;
+  fallback_occurred?: boolean;
+  fallback_reason?: string | null;
+  provider_name?: string | null;
 }
 
 export interface ScorecardModel {

@@ -243,6 +243,12 @@ Users can open a live WebSocket connection to receive real-time updates as event
 - Events are broadcast strictly within the user's organization.
 - Clients can filter the stream by case or scope to follow specific workflows without cross-tenant leakage.
 
+### High-Severity Security & Tenant Isolation Invariants
+To guarantee that multiple organizations and distinct cases remain completely segregated:
+- **Tenant-Scoped Idempotency**: Idempotency keys are strictly scoped to `(organization_id, idempotency_key)`. If Organization A and Organization B accidentally use the same idempotency key for an event or memory record, their data does not collide, and neither tenant can inspect or overwrite the other's records.
+- **Server-Authoritative Context Boundaries**: The Context Engine derives tenant identity strictly from verified server-side authentication claims (JWT). Client requests cannot fabricate tenant identity or override case boundaries. If a user is authorized for Case 100, a hint attempting to access Case 200 is rejected immediately. Furthermore, ContextEngine operates on a fail-closed principle for case boundaries: an unverified client case ID is rejected with `AUTHORIZATION_DENIED` unless verified by a configured `case_validator`. An external client cannot bypass this check by injecting case identifiers into `ContextRef`, and unverified LLM inferences are stripped before reaching downstream engines.
+- **Human-in-the-Loop Validation Gate**: When peer engines or ingest pipelines store knowledge into memory, all records enter as unverified `candidate` records. They cannot be retrieved as authoritative truth until an authorized human reviewer explicitly validates them. Attempts to self-promote without validation authority are rejected.
+
 ### General Brain as an Independent Package (`brain-co-core`)
 The General Brain has been physically extracted out of the backend into an independent, installable Python package called `brain-co-core` located under `brain/`:
 - **Complete Infrastructure Independence**: The General Brain package does not import FastAPI, SQLAlchemy, PostgreSQL, Redis, or ARQ. It contains pure Python cognitive contracts, engines, policies, and runtimes.
@@ -250,5 +256,34 @@ The General Brain has been physically extracted out of the backend into an indep
 - **In-Memory vs. Production Stores**: For tests and local CLI scripts, `brain.general.stores` provides thread-safe in-memory stores. In production, `backend/app/infrastructure/database/` provides robust SQLAlchemy adapters that connect to PostgreSQL.
 - **Provider-Independent AI**: The General Brain defines an abstract LLM interface (`ILLMClient`). The backend's AI service adapter fulfills this interface, ensuring the General Brain never hardcodes a specific AI vendor or model name.
 - **Seamless Monorepo Integration**: While `brain-co-core` is an independent package that can be built into a wheel and installed anywhere, existing backend callers continue to work seamlessly via backward-compatibility shims that preserve exact class identities.
+
+### AI Employee Grounded Cognitive Chain
+When an employee interacts with the AI Assistant in the workspace (`POST /api/v1/ai/prompt`):
+1. **Context Resolution**: The system first verifies that the user belongs to the requested organization and that the requested case exists in the database. If a user tries to ask about a case from another organization, the request is immediately rejected with a 403 Forbidden error.
+2. **Memory Retrieval**: The system queries the PostgreSQL memory store to find all validated knowledge objects, extracted contract clauses, and facts related to that case.
+3. **Grounded Prompting**: The retrieved facts are injected into the system prompt, anchoring the AI's reasoning in verified evidence and preventing hallucinations.
+4. **LLM Generation**: The prompt is processed by the configured LLM provider (such as Gemini 1.5 Flash).
+5. **Observation Logging**: Every prompt and response is logged as an immutable observation event in the database for auditing and broadcast in real time to the workspace via WebSockets.
+
+### Multi-Tenant SaaS User Journey (How It Works in Plain Language)
+Brain-Co is a true multi-tenant SaaS application designed around the real customer journey:
+1. **Domain Discovery**: A company visits Brain-Co, learns about the intelligence layer, and chooses their business domain (e.g. Legal Intelligence).
+2. **Organization Signup**: On `/onboarding/account`, the user enters their company name (e.g. "Cairo Legal Partners"), administrator name, work email, and password. In a single atomic operation:
+   - A dedicated `Organization` record is created with a unique slug and clean tenant ID (`org-...`).
+   - The initial Administrator user account is created with secure password hashing.
+   - An `OrganizationMembership` linking the user as an Admin is established.
+   - A secure JWT access token embedding the verified tenant ID is generated and returned as an HttpOnly cookie.
+3. **Workspace Isolation**: When the administrator enters `/workspace`:
+   - The workspace header proudly displays their organization name ("Cairo Legal Partners"), active domain badge, and role ("Organization Admin").
+   - Every case, client, document, and memory record is partitioned strictly by their organization ID.
+   - Cross-tenant queries are blocked at the server boundary: attempting to view or query another firm's cases returns 404 (preventing existence leaks) or 403.
+4. **Team & Member Management**: Inside the workspace, administrators can invite employees with specific roles (Admin or Employee). Employees can log in directly and work within the organization workspace.
+5. **Organization-Partitioned AI Employee**: When lawyers converse with the AI Employee, the AI answers using only the case facts, contracts, and knowledge belonging to their organization. Attempting to ground an inquiry in another organization's case fails closed with a 403 Forbidden error.
+
+### Frontend Real-Time Workspace
+The frontend workspace (`frontend/src/components/workspace/workspace-client.tsx`) provides a cohesive interface for legal employees:
+- **Case & Knowledge Viewer**: Displays case details and verified knowledge objects retrieved directly from the backend.
+- **Real-Time Live Feed**: Uses a resilient WebSocket hook (`use-observation-ws.ts`) that listens to `/api/v1/ws/observations`, automatically reconnecting if the network drops and updating the UI as new events occur.
+- **Transparent AI Mode Badging**: When extracting PDF contracts, the UI explicitly displays whether knowledge was extracted via live LLM or deterministic fallback, complete with provider badges and warning notices if fallbacks occurred.
 
 

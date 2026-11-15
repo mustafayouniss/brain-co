@@ -16,7 +16,8 @@ permit cross-organization overrides, expand task scope, override isolation rules
 
 from __future__ import annotations
 
-from typing import Any, Optional
+import logging
+from typing import Any, Callable, Optional
 
 from brain.general.contracts.capabilities import CONTEXT_RESOLVE, CapabilityRegistry
 from brain.general.contracts.context import BrainContext
@@ -26,6 +27,8 @@ from brain.general.contracts.errors import EngineErrorCode
 from brain.general.contracts.protocols import EngineResult, IContextEngine
 from brain.general.engines.base import BaseEngine
 
+logger = logging.getLogger(__name__)
+
 
 class ContextEngine(BaseEngine, IContextEngine):
     """General Brain Context Engine [GB].
@@ -34,6 +37,22 @@ class ContextEngine(BaseEngine, IContextEngine):
     Derives organization scope strictly from server-side authenticated context and
     rejects client-side organization overrides.
     """
+
+    def __init__(
+        self,
+        llm_client: Optional[ILLMClient] = None,
+        mesh_router: Optional[MeshRouter] = None,
+        llm_service: Optional[ILLMClient] = None,
+        case_validator: Optional[Callable[[str, str, Optional[str]], bool]] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            llm_client=llm_client,
+            mesh_router=mesh_router,
+            llm_service=llm_service,
+            **kwargs,
+        )
+        self._case_validator = case_validator
 
     @property
     def engine_name(self) -> str:
@@ -46,6 +65,51 @@ class ContextEngine(BaseEngine, IContextEngine):
             self.handle_resolve,
             description="Resolve contextual boundaries for a task or observation.",
         )
+
+    # -----------------------------------------------------------------
+    # Case authorization boundary helper
+    # -----------------------------------------------------------------
+
+    def _validate_case(
+        self,
+        org_id: str,
+        case_id: str,
+        user_id: Optional[str] = None,
+    ) -> tuple[bool, str]:
+        """Validate case scope within organization boundary.
+        
+        Fails closed:
+        - Rejects empty or whitespace-only case identifiers.
+        - Fails closed if no validator is configured.
+        - Fails closed if validator returns False/falsy.
+        - Fails closed if validator raises an exception, logging the internal
+          details and returning a safe generic authorization error.
+        """
+        if not case_id or not str(case_id).strip():
+            return False, "Case identifier cannot be empty or whitespace."
+
+        norm_case_id = str(case_id).strip()
+
+        if self._case_validator is None:
+            return (
+                False,
+                f"Access denied to case '{norm_case_id}': no case validator configured to verify case scope.",
+            )
+
+        try:
+            is_valid = self._case_validator(org_id, norm_case_id, user_id)
+            if not is_valid:
+                return False, f"Access denied to case '{norm_case_id}' in organization '{org_id}'"
+            return True, ""
+        except Exception as exc:
+            logger.error(
+                "Case validator raised an exception while verifying case '%s' in organization '%s': %s",
+                norm_case_id,
+                org_id,
+                exc,
+                exc_info=True,
+            )
+            return False, f"Access denied to case '{norm_case_id}': authorization check failed."
 
     # -----------------------------------------------------------------
     # Pure Engine Protocol implementation (Decoupled from Transport)
@@ -74,7 +138,56 @@ class ContextEngine(BaseEngine, IContextEngine):
                 }
             )
 
-        case_id = request_scope.get("case_id") or request_scope.get("scope_id") or getattr(context, "effective_scope_id", None) or context.case_id
+        # Server case scope from context
+        raw_server_case = getattr(context, "effective_scope_id", None) or context.case_id
+        server_case = str(raw_server_case).strip() if raw_server_case else None
+
+        raw_client_case = request_scope.get("case_id") or request_scope.get("scope_id")
+        if raw_client_case is not None and isinstance(raw_client_case, str) and not raw_client_case.strip():
+            return EngineResult(
+                error={
+                    "code": "INVALID_SCOPE",
+                    "message": "Provided case_id or scope_id cannot be empty or whitespace.",
+                }
+            )
+        client_case = str(raw_client_case).strip() if raw_client_case else None
+
+        # Cross-scope case override attempt check
+        if server_case and client_case and client_case != server_case:
+            return EngineResult(
+                error={
+                    "code": "FORBIDDEN_CASE_OVERRIDE",
+                    "message": f"Client attempted case override '{client_case}' does not match server scope '{server_case}'",
+                }
+            )
+
+        if server_case:
+            if self._case_validator:
+                valid, err_msg = self._validate_case(context.organization_id, server_case, context.user_id)
+                if not valid:
+                    return EngineResult(
+                        error={
+                            "code": "AUTHORIZATION_DENIED",
+                            "message": err_msg,
+                        }
+                    )
+            case_id = server_case
+            res_status = ResolutionStatus.EXPLICIT
+        elif client_case:
+            valid, err_msg = self._validate_case(context.organization_id, client_case, context.user_id)
+            if not valid:
+                return EngineResult(
+                    error={
+                        "code": "AUTHORIZATION_DENIED",
+                        "message": err_msg,
+                    }
+                )
+            case_id = client_case
+            res_status = ResolutionStatus.EXPLICIT
+        else:
+            case_id = None
+            res_status = ResolutionStatus.AMBIGUOUS
+
         domain_id = request_scope.get("domain_id") or context.domain_id
         user_id = context.user_id or request_scope.get("user_id")
 
@@ -84,6 +197,7 @@ class ContextEngine(BaseEngine, IContextEngine):
             case_id=case_id,
             user_id=user_id,
             source_ref=request_scope.get("source_ref"),
+            forced_status=res_status,
         )
 
         data = {
@@ -117,25 +231,116 @@ class ContextEngine(BaseEngine, IContextEngine):
 
         # Server-side context validation
         server_org = getattr(request.context_ref, "organization_id", None) if request.context_ref else None
-        hint_org = context_hint.get("organization_id")
+        if server_org:
+            server_org = str(server_org).strip()
 
-        if server_org and hint_org and hint_org != server_org:
+        hint_org = context_hint.get("organization_id")
+        if hint_org:
+            hint_org = str(hint_org).strip()
+
+        # Invariant: Organization identity MUST be derived strictly from verified
+        # server-side context. Client hints cannot fabricate tenant identity.
+        if not server_org:
             return self._error(
                 request,
                 ResultStatus.FAILED,
-                EngineErrorCode.PERMISSION_DENIED,
+                EngineErrorCode.CONTEXT_MISSING,
+                "Server context requires a verified organization_id. Client hints cannot establish tenant identity.",
+            )
+
+        if hint_org and hint_org != server_org:
+            return self._error(
+                request,
+                ResultStatus.FAILED,
+                EngineErrorCode.AUTHORIZATION_DENIED,
                 f"Client attempted organization override '{hint_org}' does not match context scope '{server_org}'",
             )
 
-        org_id = server_org or hint_org
-        domain_id = context_hint.get("domain_id")
-        case_id = (
-            context_hint.get("case_id")
-            or context_hint.get("scope_id")
-            or (getattr(request.context_ref, "case_id", None) if request.context_ref else None)
-            or (getattr(request.context_ref, "scope_id", None) if request.context_ref else None)
+        org_id = server_org
+
+        # Case boundary enforcement: server context is authoritative
+        raw_server_case = (
+            getattr(request.context_ref, "case_id", None)
+            or getattr(request.context_ref, "scope_id", None)
+            if request.context_ref
+            else None
         )
-        user_id = context_hint.get("user_id") or getattr(request.context_ref, "user_id", None) if request.context_ref else getattr(request, "actor_ref", None)
+        server_case = str(raw_server_case).strip() if raw_server_case else None
+
+        raw_hint_case = context_hint.get("case_id") or context_hint.get("scope_id")
+        if raw_hint_case is not None and isinstance(raw_hint_case, str) and not raw_hint_case.strip():
+            return self._error(
+                request,
+                ResultStatus.FAILED,
+                EngineErrorCode.INVALID_PAYLOAD,
+                "Provided case_id or scope_id in context_hint cannot be empty or whitespace.",
+            )
+        hint_case = str(raw_hint_case).strip() if raw_hint_case else None
+
+        user_id = (
+            getattr(request.context_ref, "user_id", None)
+            if request.context_ref
+            else getattr(request, "actor_ref", None)
+        ) or context_hint.get("user_id")
+
+        if server_case:
+            # Cross-scope case override check
+            if hint_case and hint_case != server_case:
+                return self._error(
+                    request,
+                    ResultStatus.FAILED,
+                    EngineErrorCode.AUTHORIZATION_DENIED,
+                    f"Client attempted case override '{hint_case}' does not match context scope '{server_case}'",
+                )
+
+            # Trusted server case provenance check:
+            # External client cannot bypass case validation merely by passing case_id in ContextRef
+            if request.sender_engine == "client":
+                valid, err_msg = self._validate_case(server_org, server_case, user_id)
+                if not valid:
+                    return self._error(
+                        request,
+                        ResultStatus.FAILED,
+                        EngineErrorCode.AUTHORIZATION_DENIED,
+                        err_msg,
+                    )
+            else:
+                # Internal engine delegation: if validator is configured, validate
+                if self._case_validator:
+                    valid, err_msg = self._validate_case(server_org, server_case, user_id)
+                    if not valid:
+                        return self._error(
+                            request,
+                            ResultStatus.FAILED,
+                            EngineErrorCode.AUTHORIZATION_DENIED,
+                            err_msg,
+                        )
+
+            case_id = server_case
+            resolution_status = ResolutionStatus.EXPLICIT
+        elif hint_case:
+            valid, err_msg = self._validate_case(server_org, hint_case, user_id)
+            if not valid:
+                return self._error(
+                    request,
+                    ResultStatus.FAILED,
+                    EngineErrorCode.AUTHORIZATION_DENIED,
+                    err_msg,
+                )
+            case_id = hint_case
+            resolution_status = ResolutionStatus.EXPLICIT
+        else:
+            case_id = None
+            resolution_status = ResolutionStatus.INSUFFICIENT_DATA
+
+        domain_id = context_hint.get("domain_id") or (
+            getattr(request.context_ref, "domain_id", None) if request.context_ref else "general"
+        )
+        user_id = (
+            getattr(request.context_ref, "user_id", None)
+            if request.context_ref
+            else getattr(request, "actor_ref", None)
+        ) or context_hint.get("user_id")
 
         context_ref = self._resolve_deterministic(
             org_id=org_id,
@@ -143,12 +348,37 @@ class ContextEngine(BaseEngine, IContextEngine):
             case_id=case_id,
             user_id=user_id,
             source_ref=source_ref,
+            forced_status=resolution_status,
         )
 
         if context_ref.resolution_status == ResolutionStatus.INSUFFICIENT_DATA:
-            llm_context = await self._try_llm_resolution(payload)
+            llm_context = await self._try_llm_resolution(payload, server_org=server_org)
             if llm_context is not None:
+                if llm_context.case_id:
+                    valid, err_msg = self._validate_case(server_org, llm_context.case_id, user_id)
+                    if not valid:
+                        llm_context = llm_context.model_copy(
+                            update={
+                                "case_id": None,
+                                "scope_id": None,
+                                "resolution_status": ResolutionStatus.AMBIGUOUS,
+                                "ambiguities": [
+                                    f"Inferred case '{llm_context.case_id}' could not be verified by case validator: {err_msg}"
+                                ],
+                                "scope_constraints": [f"organization_id={server_org}"],
+                            }
+                        )
                 context_ref = llm_context
+            else:
+                context_ref = ContextRef(
+                    organization_id=server_org,
+                    domain_id=domain_id,
+                    case_id=None,
+                    user_id=user_id,
+                    resolution_status=ResolutionStatus.AMBIGUOUS,
+                    ambiguities=["Missing required case_id / scope_id for boundary enforcement."],
+                    scope_constraints=[f"organization_id={server_org}"],
+                )
 
         status = ResultStatus.SUCCESS
         if context_ref.resolution_status == ResolutionStatus.AMBIGUOUS:
@@ -202,6 +432,7 @@ class ContextEngine(BaseEngine, IContextEngine):
         case_id: Optional[str],
         user_id: Optional[str],
         source_ref: Optional[str],
+        forced_status: Optional[ResolutionStatus] = None,
     ) -> ContextRef:
         """Resolve context from explicit identifiers."""
         ambiguities: list[str] = []
@@ -215,24 +446,26 @@ class ContextEngine(BaseEngine, IContextEngine):
             if has_org:
                 scope_constraints.append(f"organization_id={org_id}")
 
+            status = forced_status or ResolutionStatus.EXPLICIT
             return ContextRef(
                 organization_id=org_id,
                 domain_id=domain_id,
                 case_id=case_id,
                 user_id=user_id,
-                resolution_status=ResolutionStatus.EXPLICIT,
+                resolution_status=status,
                 scope_constraints=scope_constraints,
             )
 
         if has_org and not has_case:
             ambiguities.append("Missing required case_id / scope_id for boundary enforcement.")
             scope_constraints.append(f"organization_id={org_id}")
+            status = forced_status or ResolutionStatus.INSUFFICIENT_DATA
             return ContextRef(
                 organization_id=org_id,
                 domain_id=domain_id,
                 case_id=None,
                 user_id=user_id,
-                resolution_status=ResolutionStatus.AMBIGUOUS,
+                resolution_status=status,
                 ambiguities=ambiguities,
                 scope_constraints=scope_constraints,
             )
@@ -251,7 +484,11 @@ class ContextEngine(BaseEngine, IContextEngine):
     # Intelligence Layer: LLM resolution fallback
     # -----------------------------------------------------------------
 
-    async def _try_llm_resolution(self, payload: dict[str, Any]) -> Optional[ContextRef]:
+    async def _try_llm_resolution(
+        self,
+        payload: dict[str, Any],
+        server_org: Optional[str] = None,
+    ) -> Optional[ContextRef]:
         """Attempt to infer context using LLM when deterministic resolution is insufficient."""
         if not self._llm_client:
             return None
@@ -273,12 +510,12 @@ class ContextEngine(BaseEngine, IContextEngine):
         if confidence < 0.7:
             return None
 
-        case_id = result.get("case_id")
-        org_id = result.get("organization_id")
+        raw_case_id = result.get("case_id")
+        case_id = str(raw_case_id).strip() if raw_case_id else None
 
         if case_id:
             return ContextRef(
-                organization_id=org_id,
+                organization_id=server_org,
                 domain_id=result.get("domain_id"),
                 case_id=case_id,
                 user_id=result.get("user_id"),

@@ -73,9 +73,13 @@ def password_needs_rehash(hashed_password: str) -> bool:
 
 
 def create_access_token(
-    subject: str, expires_minutes: int | None = None
+    subject: str,
+    expires_minutes: int | None = None,
+    org_id: str | None = None,
+    role: str | None = None,
+    domain: str | None = None,
 ) -> str:
-    """Create a signed HS256 JWT containing strictly sub, iat, and exp."""
+    """Create a signed HS256 JWT containing sub, iat, exp, and optional org/role/domain context."""
     now = datetime.now(timezone.utc)
     duration = timedelta(
         minutes=expires_minutes
@@ -87,6 +91,13 @@ def create_access_token(
         "iat": now,
         "exp": now + duration,
     }
+    if org_id:
+        payload["org_id"] = str(org_id)
+        payload["organization_id"] = str(org_id)
+    if role:
+        payload["role"] = str(role)
+    if domain:
+        payload["domain"] = str(domain)
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 

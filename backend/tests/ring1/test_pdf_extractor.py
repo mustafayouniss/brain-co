@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import io
+import json
 import pytest
 import pypdf
 
+from brain.extensions.legal.extractor import LegalStructuredKnowledgeExtractor
 from app.ring1.pdf.extractor import (
     EmptyPDFError,
     EncryptedPDFError,
@@ -145,3 +147,59 @@ async def test_structured_knowledge_extraction_with_provenance():
     # Verify entity provenance
     entities_names = [e.name for e in knowledge.entities]
     assert any("Article 147" in name for name in entities_names)
+
+
+@pytest.mark.asyncio
+async def test_extraction_provenance_and_fallback_tracking():
+    """Verify that extraction mode and fallback reasons are explicitly tracked."""
+    pdf_bytes = _create_pdf_with_text([
+        "COMMERCIAL CONTRACT\nParty A: Alpha Corp agrees to pay.\nArticle 147 Egyptian Civil Code.",
+        "Obligation: Alpha Corp shall deliver services by 2026-12-01."
+    ])
+    extractor = PDFExtractor()
+    extraction_res = extractor.extract(pdf_bytes, filename="contract.pdf")
+
+    # 1. Deterministic extraction by design (no LLM configured)
+    knowledge_extractor = LegalStructuredKnowledgeExtractor(llm_service=None)
+    res_det = await knowledge_extractor.extract_knowledge(extraction_res)
+    assert res_det.extraction_mode == "deterministic"
+    assert res_det.fallback_occurred is False
+    assert res_det.fallback_reason is None
+    assert res_det.provider_name is None
+
+    # 2. LLM failure triggering deterministic fallback
+    class FailingLLM:
+        async def complete(self, req):
+            raise ConnectionError("LLM API endpoint unavailable")
+
+    failing_extractor = LegalStructuredKnowledgeExtractor(llm_service=FailingLLM())
+    res_fallback = await failing_extractor.extract_knowledge(extraction_res)
+    assert res_fallback.extraction_mode == "deterministic"
+    assert res_fallback.fallback_occurred is True
+    assert "LLM API endpoint unavailable" in (res_fallback.fallback_reason or "")
+    assert len(res_fallback.facts) > 0
+
+    # 3. Successful LLM extraction
+    class SuccessfulLLM:
+        provider_id = "mock-gemini"
+        async def complete(self, req):
+            class Resp:
+                content = json.dumps({
+                    "document_type": "contract",
+                    "title": "COMMERCIAL CONTRACT",
+                    "summary": "AI extracted contract",
+                    "parties": ["Party A"],
+                    "facts": [{"statement": "Party A agreed to terms", "category": "legal_fact", "page_number": 1, "source_excerpt": "agreed"}],
+                    "entities": [{"name": "Party A", "entity_type": "organization", "page_number": 1}],
+                    "obligations": [],
+                })
+            return Resp()
+
+    successful_extractor = LegalStructuredKnowledgeExtractor(llm_service=SuccessfulLLM())
+    res_llm = await successful_extractor.extract_knowledge(extraction_res)
+    assert res_llm.extraction_mode == "llm"
+    assert res_llm.fallback_occurred is False
+    assert res_llm.fallback_reason is None
+    assert res_llm.provider_name == "mock-gemini"
+    assert len(res_llm.facts) == 1
+

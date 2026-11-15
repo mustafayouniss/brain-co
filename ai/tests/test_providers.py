@@ -163,3 +163,59 @@ def test_mock_client_response_handling_rate_limit_error():
 
     assert exc_info.value.error_type == LLMErrorType.RATE_LIMITED
     assert "Rate limit exceeded" in exc_info.value.message
+
+
+def test_gemini_provider_configuration():
+    from ai.providers.gemini_provider import GeminiProvider
+
+    p_with_key = GeminiProvider(api_key="gemini-test-key")
+    assert p_with_key.get_provider_id() == "gemini"
+    assert p_with_key.is_available() is True
+    assert p_with_key._default_model == "gemini-3.5-flash-lite"
+    assert p_with_key._base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+
+    p_no_key = GeminiProvider(api_key="")
+    assert p_no_key.is_available() is False
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_generate_with_mock():
+    from ai.providers.gemini_provider import GeminiProvider
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers.get("Authorization") == "Bearer gemini-valid-key"
+        resp_data = {
+            "id": "chatcmpl-gemini-test",
+            "object": "chat.completion",
+            "model": "gemini-3.5-flash-lite",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "AI is artificial intelligence that solves problems.",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 8,
+                "completion_tokens": 9,
+                "total_tokens": 17,
+            },
+        }
+        return httpx.Response(200, json=resp_data)
+
+    transport = httpx.MockTransport(handler)
+    mock_client = httpx.AsyncClient(transport=transport)
+    provider = GeminiProvider(api_key="gemini-valid-key", client=mock_client)
+
+    req = LLMRequest(
+        messages=[LLMMessage(role="user", content="Explain how AI works in a few words")],
+        model="gemini-3.5-flash-lite",
+    )
+    res = await provider.generate(req)
+    assert res.content == "AI is artificial intelligence that solves problems."
+    assert res.model == "gemini-3.5-flash-lite"
+    assert res.usage.total_tokens == 17
+

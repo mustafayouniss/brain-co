@@ -118,9 +118,16 @@ class ObservationEngine(BaseEngine, IObservationEngine):
         context: BrainContext,
     ) -> EngineResult:
         """Transport-independent recording of an observation event."""
-        if not context or not context.organization_id:
+        if not context or not context.organization_id or not str(context.organization_id).strip():
             return EngineResult(
-                error={"code": "INVALID_CONTEXT", "message": "Valid BrainContext with organization_id required"}
+                error={"code": "INVALID_CONTEXT", "message": "Valid BrainContext with non-empty organization_id required"}
+            )
+
+        authorized_org = str(context.organization_id).strip()
+        payload_org = observation_data.get("organization_id")
+        if payload_org and str(payload_org).strip() != authorized_org:
+            return EngineResult(
+                error={"code": EngineErrorCode.AUTHORIZATION_DENIED.value, "message": "Access denied: payload organization_id does not match context."}
             )
 
         event_type = observation_data.get("event_type", "")
@@ -133,7 +140,10 @@ class ObservationEngine(BaseEngine, IObservationEngine):
         idempotency_key = observation_data.get("idempotency_key") or event_id
 
         # 1. Duplicate check via store
-        existing = await self._store.find_by_idempotency_key(idempotency_key)
+        existing = await self._store.find_by_idempotency_key(
+            idempotency_key,
+            organization_id=authorized_org,
+        )
         if existing:
             return EngineResult(
                 data={
@@ -233,7 +243,59 @@ class ObservationEngine(BaseEngine, IObservationEngine):
         if validation_err:
             return validation_err
 
+        context_err = self.require_context_ref(request)
+        if context_err:
+            return context_err
+
+        ctx = request.context_ref
+        if ctx is None:
+            return self._error(
+                request,
+                ResultStatus.NEEDS_CLARIFICATION,
+                EngineErrorCode.CONTEXT_MISSING,
+                "Context reference is required for observation operations.",
+            )
+
+        if isinstance(ctx, str):
+            return self._error(
+                request,
+                ResultStatus.FAILED,
+                EngineErrorCode.CONTEXT_MISSING,
+                "Unverified string context reference cannot establish tenant identity.",
+            )
+
+        raw_org = getattr(ctx, "organization_id", None)
+        org_id = str(raw_org).strip() if raw_org is not None else ""
+        if not org_id:
+            return self._error(
+                request,
+                ResultStatus.NEEDS_CLARIFICATION,
+                EngineErrorCode.CONTEXT_MISSING,
+                "Context reference must contain a non-empty organization_id.",
+            )
+
         payload = request.payload
+        payload_org = payload.get("organization_id")
+        if payload_org and str(payload_org).strip() != org_id:
+            return self._error(
+                request,
+                ResultStatus.FAILED,
+                EngineErrorCode.AUTHORIZATION_DENIED,
+                "Access denied: payload organization_id does not match authorized context.",
+            )
+
+        ctx_case = getattr(ctx, "case_id", None)
+        authorized_case = str(ctx_case).strip() if ctx_case is not None else ""
+        payload_case = payload.get("case_id")
+        if authorized_case and payload_case and str(payload_case).strip() != authorized_case:
+            return self._error(
+                request,
+                ResultStatus.FAILED,
+                EngineErrorCode.AUTHORIZATION_DENIED,
+                "Access denied: payload case_id does not match authorized context.",
+            )
+        case_id = authorized_case or (str(payload_case).strip() if payload_case else None)
+
         event_type = payload.get("event_type", "")
         if not event_type:
             return self._error(
@@ -246,8 +308,11 @@ class ObservationEngine(BaseEngine, IObservationEngine):
         event_id = payload.get("event_id") or f"evt-{uuid.uuid4().hex[:12]}"
         idempotency_key = payload.get("idempotency_key") or event_id
 
-        # Duplicate check
-        existing = await self._store.find_by_idempotency_key(idempotency_key)
+        # Duplicate check strictly scoped to organization
+        existing = await self._store.find_by_idempotency_key(
+            idempotency_key,
+            organization_id=org_id,
+        )
         if existing:
             return self._success(request, {
                 "observation_id": str(existing.get("id") or existing.get("observation_id")),
@@ -261,9 +326,6 @@ class ObservationEngine(BaseEngine, IObservationEngine):
             })
 
         normalized = self._normalize_event(payload, event_id)
-        ctx = request.context_ref
-        case_id = getattr(ctx, "case_id", None) if ctx else payload.get("case_id")
-        org_id = getattr(ctx, "organization_id", None) if ctx else payload.get("organization_id")
 
         to_save = {
             "event_id": normalized["event_id"],
@@ -272,7 +334,7 @@ class ObservationEngine(BaseEngine, IObservationEngine):
             "actor_ref": normalized.get("actor_ref"),
             "case_id": case_id,
             "scope_id": case_id,
-            "organization_id": org_id or "org-default",
+            "organization_id": org_id,
             "payload": normalized.get("payload"),
             "metadata": normalized.get("metadata"),
             "trace_id": request.trace_id,

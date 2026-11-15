@@ -94,7 +94,11 @@ def mesh_system(db_session: Session):
         llm_service=llm_service,
         mesh_router=router,
     )
-    context = ContextEngine(llm_service=llm_service, mesh_router=router)
+    context = ContextEngine(
+        llm_service=llm_service,
+        mesh_router=router,
+        case_validator=lambda org, case, user: bool(org and case),
+    )
     memory = BasicMemoryEngine(
         db_session_factory=session_factory,
         llm_service=llm_service,
@@ -183,6 +187,7 @@ async def test_full_ring1_mesh_lifecycle_e2e(mesh_system):
     req_context_a = MeshRequest(
         sender_engine="client",
         recipient_capability=CONTEXT_RESOLVE,
+        context_ref=ContextRef(organization_id=org_id),
         payload={
             "context_hint": {
                 "organization_id": org_id,
@@ -220,6 +225,7 @@ async def test_full_ring1_mesh_lifecycle_e2e(mesh_system):
     req_context_invalid = MeshRequest(
         sender_engine="client",
         recipient_capability=CONTEXT_RESOLVE,
+        context_ref=ContextRef(organization_id=org_id),
         payload={"context_hint": {"organization_id": org_id}},  # missing case_id
     )
     resp_context_invalid = await router.dispatch(req_context_invalid)
@@ -462,3 +468,55 @@ async def test_full_ring1_mesh_lifecycle_e2e(mesh_system):
     assert "memory" in engines_in_trace
     assert "retrieval" in engines_in_trace
     assert "planning" in engines_in_trace
+
+
+@pytest.mark.asyncio
+async def test_autonomous_engine_delegation_observation_to_planning(mesh_system):
+    """Verify autonomous engine-to-engine delegation from Observation to Planning via MeshRouter."""
+    import uuid
+    router: MeshRouter = mesh_system["router"]
+    planning_engine: PlanningEngine = mesh_system["planning"]
+
+    org_id = f"org-delegate-{uuid.uuid4().hex[:6]}"
+    case_id = f"case-delegate-{uuid.uuid4().hex[:6]}"
+    ctx = ContextRef(
+        organization_id=org_id,
+        case_id=case_id,
+        resolution_status=ResolutionStatus.EXPLICIT,
+    )
+
+    req_obs = MeshRequest(
+        sender_engine="client",
+        recipient_capability=OBSERVATION_RECORD_EVENT,
+        context_ref=ctx,
+        payload={
+            "event_type": "contract_breach_detected",
+            "source": "automated_audit",
+            "requires_follow_up": True,
+            "auto_delegate": True,
+            "follow_up_capability": PLANNING_CREATE_PLAN,
+            "follow_up_payload": {
+                "goal": "Formulate recovery and legal notice strategy for contract breach",
+                "max_replans": 2,
+            },
+        },
+    )
+
+    resp_obs = await router.dispatch(req_obs)
+    assert resp_obs.status == ResultStatus.SUCCESS
+    payload = resp_obs.payload
+    assert payload["requires_follow_up"] is True
+    assert "delegated_result" in payload
+
+    delegated = payload["delegated_result"]
+    assert delegated["capability"] == PLANNING_CREATE_PLAN
+    assert delegated["status"] == "success"
+
+    plan_data = delegated["payload"]
+    plan_id = plan_data.get("plan_id")
+    assert plan_id is not None
+    assert plan_id in planning_engine._plans
+    plan = planning_engine._plans[plan_id]
+    assert plan.goal == "Formulate recovery and legal notice strategy for contract breach"
+    assert len(plan.steps) > 0
+

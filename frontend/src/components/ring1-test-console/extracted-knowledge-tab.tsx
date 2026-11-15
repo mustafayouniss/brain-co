@@ -85,12 +85,28 @@ export function ExtractedKnowledgeTab({
                 {knowledge?.title || "Ingested Document"}
               </h4>
               <p className="text-[10px] text-[#8a94a8] capitalize truncate">
-                Type: {knowledge?.document_type.replace(/_/g, " ")} | Mode: {knowledge?.extraction_mode}
+                Type: {knowledge?.document_type.replace(/_/g, " ")} | Mode: {knowledge?.extraction_mode} {knowledge?.provider_name ? `(${knowledge.provider_name})` : ""}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 flex-wrap">
+            {knowledge?.fallback_occurred ? (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-300 border-amber-500/30 font-semibold flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                Fallback Regex
+              </span>
+            ) : knowledge?.extraction_mode === "llm" ? (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-brand/10 text-brand border-brand/30 font-semibold flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-brand" />
+                LLM Grounded
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-surface text-[#8a94a8] border-border font-semibold">
+                Deterministic
+              </span>
+            )}
+
             {scorecard && (
               <span
                 className={`text-[10px] font-mono px-2 py-0.5 rounded-full border font-semibold ${
@@ -137,6 +153,24 @@ export function ExtractedKnowledgeTab({
             </div>
           </div>
         </div>
+
+        {/* Provenance and Fallback Alert */}
+        {knowledge?.fallback_occurred && (
+          <div className="mt-2.5 flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px]">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+            <div className="min-w-0">
+              <span className="font-semibold">Fallback Occurred:</span> Extracted via deterministic regex patterns. LLM extraction was unavailable ({knowledge.fallback_reason || "Provider error"}).
+            </div>
+          </div>
+        )}
+        {knowledge?.extraction_mode === "llm" && (
+          <div className="mt-2.5 flex items-center gap-2 p-2 rounded-lg bg-brand/10 border border-brand/30 text-brand text-[11px]">
+            <Sparkles className="w-3.5 h-3.5 shrink-0 text-brand" />
+            <div className="min-w-0">
+              <span className="font-semibold">AI Extracted:</span> Structured via LLM provider <span className="font-mono text-white">{knowledge.provider_name || "llm"}</span> with strict page-level citation validation.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Navigation Sub-Tabs */}

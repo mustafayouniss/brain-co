@@ -105,6 +105,83 @@ Practical note: other people's code (frontend, mobile, AI) talks to this backend
 - **Backward Compatibility**: `backend/app/ring1/` and `backend/app/domains/` maintain thin shims re-exporting canonical classes preserving exact class identity without duplicating implementation logic.
 - **Verification**: 16 new automated architecture isolation tests in `tests/architecture/` (AST scanning and isolated subprocess execution). 347/347 tests passing (100% pass rate).
 
+## D-018 — Multi-Tenant Idempotency Key Scoping & Strict Tenant Enforcement (2026-11-14)
+- **Problem**: Global uniqueness on `idempotency_key` allowed cross-tenant collisions and data leakage where Tenant B using the same key as Tenant A could observe or collide with Tenant A's records (`SEC-01`). Additionally, stores accepted optional `organization_id` and defaulted to unscoped queries when missing, and `ObservationEngine` trusted payload `organization_id` with an insecure `"org-default"` fallback.
+- **Decision**: All idempotency uniqueness constraints are composite on `(organization_id, idempotency_key)` in PostgreSQL (migration `c59d4e7f8a1b` on `ring1_observations` and `ring1_memory_records`).
+- **Store & Engine Isolation**:
+  - `IObservationStore` and `IMemoryStore` protocols strictly require `organization_id: str` on `find_by_idempotency_key` (removed `Optional[str] = None`).
+  - All store implementations (`InMemoryObservationStore`, `InMemoryMemoryStore`, `SqlAlchemyObservationStore`, `SqlAlchemyMemoryStore`) validate that `organization_id` is a non-empty string on both lookups and persistence (`save` / `save_record`), raising `ValueError` on missing, empty, or whitespace-only inputs.
+  - `ObservationEngine.handle_record_event` and `record_observation`: Requires verified server-side context (`context_ref`), validates non-empty `organization_id`, rejects missing context, unverified string context references, payload tenant spoofing, and payload case mismatch; completely eliminated `"org-default"` fallback.
+  - `BasicMemoryEngine.handle_store_record` and `store_candidate`: Enforces non-empty `organization_id` from authorized context, rejects string context references, and rejects payload tenant/case spoofing.
+- **Database-Level NOT NULL Constraint**:
+  - Enforced `nullable=False` on `Observation.organization_id` and `MemoryRecord.organization_id` in SQLAlchemy models and applied Alembic migration `d60e5f8a9b2c_enforce_not_null_organization_id.py` with pre-check validation safeguards.
+- **Verification**: 12 comprehensive adversarial tests in `backend/tests/ring1/test_idempotency_tenant_isolation.py`. Full test suite passing (311 backend, 16 architecture).
+
+## D-019 — Context Engine Server-Side Scope Authority & Trust Boundaries (2026-11-14)
+- **Problem**: `ContextEngine.handle_resolve` trusted client `context_hint` to supply organization ID when missing or override authorized case IDs (`SEC-02`), and dead code blocked LLM resolution reachability (`ENG-01`).
+- **Decision**: Server-side context is authoritative. Missing `server_org` fails closed (`CONTEXT_MISSING`). Client attempts to override `organization_id` or `case_id` are rejected with `AUTHORIZATION_DENIED` and HTTP 403.
+- **Case Validation**: Injected `case_validator` verifies proposed case hints against tenant storage.
+- **LLM Fallback**: Missing case scope deterministically returns `INSUFFICIENT_DATA` allowing `_try_llm_resolution` reachability, with inferred results clamped strictly to the verified server organization.
+
+## D-020 — Memory Mesh Handler Human Validation Lifecycle Alignment (2026-11-14)
+- **Problem**: `BasicMemoryEngine.handle_store_record` hardcoded `"status": "active"`, bypassing the Constitution's candidate lifecycle and human validation authority (`SEC-05`).
+- **Decision**: All newly ingested knowledge objects stored via mesh capability `memory.store_record` enter strictly as `"candidate"`. Direct transition to `"validated"` or `"active"` requires verified `validation_authority=True` on the execution context. Candidates are excluded from standard user retrieval.
+
+## D-021 — Ring 1 Architectural Remediation & Cognitive Chain Integration (2026-11-15)
+- **Context API & Case Validation Production Wiring (P0)**:
+  - `ContextEngine` now receives an authoritative database-backed `case_validator` in production endpoints (`backend/app/api/v1/context.py`) and test runners (`backend/app/ring1/service.py`).
+  - Validates case IDs and case numbers strictly bounded by `organization_id` via `CaseService`. Missing or unauthorized cases fail closed with HTTP 403 Forbidden / `AUTHORIZATION_DENIED`.
+- **Execution Event Provenance & Status Integrity (P0)**:
+  - Eliminated fabricated `source_engine="observation"` in `test_scenario_service.py` and `pdf_pipeline_service.py`. Event `source_engine` strictly mirrors `MeshRequest.sender_engine`.
+  - Context resolution steps only record `status="completed"` when `resp_c.status == ResultStatus.SUCCESS` and `resolution_status == EXPLICIT`. Failed steps record `status="failed"` and never fabricate synthetic `ContextRef` instances.
+- **Explicit AI Extraction Mode & Provenance Transparency (P0)**:
+  - `DocumentStructuredKnowledge` extended with `extraction_mode`, `fallback_occurred`, `fallback_reason`, and `provider_name`.
+  - `LegalStructuredKnowledgeExtractor` reports `extraction_mode="llm"` with provider details on success, or `extraction_mode="deterministic"` with explicit fallback reasons on LLM failure, preventing silent misrepresentation.
+- **AI Employee Grounded Cognitive Pipeline (P0)**:
+  - Rewrote `/api/v1/ai/prompt` to execute the full 5-stage Ring 1 cognitive pipeline:
+    1. Context resolution asserting tenant and case scope boundaries.
+    2. Case knowledge retrieval from PostgreSQL memory store (`SqlAlchemyMemoryStore`).
+    3. Grounded reasoning prompt formulation incorporating verified retrieved facts.
+    4. LLM provider generation via configured provider.
+    5. Audit observation event recording in PostgreSQL (`SqlAlchemyObservationStore`).
+- **Live Gemini Provider Integration (P1)**:
+  - Default model aligned to production `gemini-1.5-flash` in `ai_config.py` and `gemini_provider.py`.
+  - Sandbox network isolation confirmed and verified: outbound cloud API requests encounter network timeout (exit code 28). Documented transparently without fabricating cloud responses.
+- **Autonomous Multi-Hop Engine Delegation (P1)**:
+  - Verified autonomous peer-to-peer delegation from `ObservationEngine.handle_record_event` to `PlanningEngine.create_plan` via `MeshRouter` on breach observations.
+- **Frontend Workspace & Next.js 16.4.5 Alignment (P1)**:
+  - Upgraded Next.js and `eslint-config-next` to `16.4.5` in `frontend/package.json`.
+  - Implemented real-time WebSocket client hook `use-observation-ws.ts` and Brain status proxy route `/api/brain/status`. Connected workspace panels (`OverviewPanel`, `KnowledgePanel`, `AIEmployeePanel`) to live backend APIs.
+
+## D-022 — Multi-Tenant SaaS Foundation, Organization Signup, Workspace Isolation & Domain Separation (2026-11-15)
+- **Problem**:
+  - Brain-Co operated as a single-organization developer prototype (`D-004`). All authentication, context engines, observation stores, and endpoints hardcoded `settings.ORGANIZATION_ID` (`org-brain-corp`).
+  - There was no organization registration, public onboarding account creation was disabled, and users could not create or switch between tenant workspaces.
+  - Legal domain logic and system prompts were hardcoded in generic API routes (`app/api/v1/ai.py`), violating domain extension separation.
+- **Architectural Separation**:
+  - **Organization**: Represents the customer tenant company (PostgreSQL table `organizations`).
+  - **Deployment**: Represents the runtime environment (`settings.ENVIRONMENT`, database connections, server configuration).
+  - **Domain**: Represents the business capability extension (`legal`, `sales`, `logistics`).
+- **Decisions**:
+  1. **Database Schema & Safe Migration (`e71f6a9b0c3d`)**:
+     - Added `Organization` table (string PK `id="org-..."`, `name`, `slug`, `domain`, `is_active`, `settings`, timestamps).
+     - Added `OrganizationMembership` table (UUID PK, FK to `organizations.id`, FK to `users.id`, `role IN ('admin', 'employee')`, unique constraint on `(organization_id, user_id)`).
+     - Data safety guarantee: Automatically seeded legacy `'org-brain-corp'` and backfilled admin memberships for all existing users, preserving existing data with zero downtime.
+  2. **Server-Authoritative Membership & Token Authentication**:
+     - Registration endpoint `POST /api/v1/auth/register-organization` atomically provisions Organization, initial Admin User, and Admin Membership.
+     - Login endpoint `POST /api/v1/auth/login` and switch endpoint `POST /api/v1/auth/switch-organization` embed verified `org_id`, `role`, and `domain` into JWT claims.
+     - Dependency `get_brain_context` strictly validates active membership in PostgreSQL for every request; never trusts client-supplied tenant headers or claims.
+  3. **Legal Domain Extension Modular Separation**:
+     - Added `get_system_prompt()` to `IDomainExtension` contract.
+     - Encapsulated Egyptian Civil Law grounding prompt inside `LegalDomainExtension`.
+     - Generic `ai.py` dynamically resolves domain prompts via `get_domain_extension(domain_id)` registry, keeping General Brain clean and domain-agnostic.
+  4. **Multi-Tenant SaaS Onboarding & Workspace Flow**:
+     - Built frontend Organization Registration Screen (`/onboarding/account`) enabling company name, domain selection, admin account setup, and automatic workspace redirection.
+     - Implemented Next.js proxy routes `/api/auth/register`, `/api/auth/session`, `/api/cases`, and `/api/organizations/members`.
+     - Built dynamic workspace UI displaying verified tenant identity, active cases, member management, PDF document ingestion, and grounded Legal AI Employee.
+  5. **Tenant Isolation Verification**:
+     - Automated test suite `backend/tests/test_saas_organization_isolation.py` proves tenant partitioning across 5 real organizations with zero cross-tenant leakage across cases, memory, observations, and AI Employee.
+
 ---
 
 ## Open questions (do not assume an answer)

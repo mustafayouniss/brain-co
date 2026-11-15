@@ -172,9 +172,15 @@ async def test_engine_initiated_delegation_perception_to_observation(ring1_mesh)
 async def test_delegation_irrelevant_engines_skipped(ring1_mesh):
     """When an event does not require follow-up, delegation is skipped entirely."""
     router = ring1_mesh["router"]
+    ctx = ContextRef(
+        organization_id="org-acme",
+        case_id="case-42",
+        status=ResolutionStatus.EXPLICIT,
+    )
     req = MeshRequest(
         sender_engine="client",
         recipient_capability=OBSERVATION_RECORD_EVENT,
+        context_ref=ctx,
         payload={
             "event_type": "heartbeat",
             "source": "cron",
@@ -191,9 +197,15 @@ async def test_delegation_irrelevant_engines_skipped(ring1_mesh):
 async def test_delegation_downstream_failure_propagation(ring1_mesh):
     """Downstream delegation failure propagates cleanly to the caller without unhandled exceptions."""
     router = ring1_mesh["router"]
+    ctx = ContextRef(
+        organization_id="org-acme",
+        case_id="case-42",
+        status=ResolutionStatus.EXPLICIT,
+    )
     req = MeshRequest(
         sender_engine="client",
         recipient_capability=OBSERVATION_RECORD_EVENT,
+        context_ref=ctx,
         payload={
             "event_type": "document.uploaded",
             "source": "test",

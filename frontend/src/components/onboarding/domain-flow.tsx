@@ -100,7 +100,7 @@ export function DomainFlow({ domain }: { domain: DomainKey }) {
                   loggedOut = false;
                 }
                 router.push(
-                  loggedOut ? "/login?next=/onboarding/usage" : "/workspace",
+                  loggedOut ? "/onboarding/account" : "/workspace",
                 );
               }}
               className={buttonClasses("primary", "lg", "w-full sm:w-auto")}

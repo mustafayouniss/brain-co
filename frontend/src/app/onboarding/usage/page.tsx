@@ -37,9 +37,7 @@ export default function UsageScreen() {
 
   function choose() {
     if (!selected) return;
-    // Skip account creation - public self-registration is not supported
-    // Redirect to login where users can log in with admin-provided credentials
-    router.push("/login?next=/workspace");
+    router.push("/onboarding/account");
   }
 
   return (

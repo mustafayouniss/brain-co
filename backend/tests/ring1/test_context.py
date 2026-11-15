@@ -3,7 +3,7 @@
 import pytest
 
 from app.ring1.contracts.capabilities import CONTEXT_RESOLVE
-from app.ring1.contracts.context_ref import ResolutionStatus
+from app.ring1.contracts.context_ref import ContextRef, ResolutionStatus
 from app.ring1.contracts.envelopes import MeshRequest, ResultStatus
 from app.ring1.contracts.errors import EngineErrorCode
 from app.ring1.engines.context import ContextEngine
@@ -11,10 +11,14 @@ from app.ring1.engines.context import ContextEngine
 
 @pytest.mark.asyncio
 async def test_context_resolve_explicit(fake_llm_service):
-    engine = ContextEngine(llm_service=fake_llm_service)
+    engine = ContextEngine(
+        llm_service=fake_llm_service,
+        case_validator=lambda org, case, user: True,
+    )
     req = MeshRequest(
         sender_engine="client",
         recipient_capability=CONTEXT_RESOLVE,
+        context_ref=ContextRef(organization_id="org-main", case_id="case-456"),
         payload={
             "context_hint": {
                 "organization_id": "org-main",
@@ -38,6 +42,7 @@ async def test_context_resolve_missing_case(fake_llm_service):
     req = MeshRequest(
         sender_engine="client",
         recipient_capability=CONTEXT_RESOLVE,
+        context_ref=ContextRef(organization_id="org-main"),
         payload={
             "context_hint": {
                 "organization_id": "org-main",
@@ -57,6 +62,7 @@ async def test_context_empty_hints_fails(fake_llm_service):
     req = MeshRequest(
         sender_engine="client",
         recipient_capability=CONTEXT_RESOLVE,
+        context_ref=ContextRef(organization_id="org-main"),
         payload={},
     )
     resp = await engine.handle_resolve(req)

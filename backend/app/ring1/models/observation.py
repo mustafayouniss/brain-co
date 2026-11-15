@@ -40,6 +40,7 @@ class Observation(Base):
         Index("ix_ring1_observations_trace_id", "trace_id"),
         Index(
             "uq_ring1_observations_idempotency",
+            "organization_id",
             "idempotency_key",
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
@@ -60,7 +61,7 @@ class Observation(Base):
     # Context isolation
     context_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     case_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    organization_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    organization_id: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # Payload and metadata
     payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -104,6 +105,7 @@ class MemoryRecord(Base):
         Index("ix_ring1_memory_records_trace_id", "trace_id"),
         Index(
             "uq_ring1_memory_records_idempotency",
+            "organization_id",
             "idempotency_key",
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
@@ -121,7 +123,7 @@ class MemoryRecord(Base):
     # Context isolation
     context_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     case_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    organization_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    organization_id: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # Content
     payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

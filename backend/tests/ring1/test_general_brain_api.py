@@ -182,8 +182,11 @@ def test_observation_cursor_pagination(client: TestClient, auth_headers: dict[st
 # 3. POST /api/v1/context/resolve
 # ---------------------------------------------------------------------------
 
-def test_context_resolve_endpoint(client: TestClient, auth_headers: dict[str, str]):
-    """POST /api/v1/context/resolve resolves execution boundaries."""
+def test_context_resolve_endpoint(client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch):
+    """POST /api/v1/context/resolve resolves execution boundaries when validated."""
+    from app.api.v1.context import _context_engine
+    monkeypatch.setattr(_context_engine, "_case_validator", lambda org, case, user: True)
+
     case_id = f"case-{uuid.uuid4().hex[:8]}"
     resolve_req = {
         "domain_id": "legal",

@@ -2,9 +2,24 @@
 
 import * as React from "react";
 
+export interface SessionOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  domain: string;
+}
+
 export interface SessionUser {
+  id?: string;
   email: string;
   name: string;
+  role?: "admin" | "employee";
+  active_organization_id?: string;
+  active_organization_name?: string;
+  active_organization_slug?: string;
+  active_domain?: string;
+  organizations?: SessionOrganization[];
 }
 
 interface SessionState {
@@ -30,8 +45,15 @@ export function useSession() {
       const userData = await response.json();
       setState({ 
         user: { 
+          id: userData.id,
           email: userData.email, 
-          name: userData.full_name 
+          name: userData.full_name,
+          role: userData.role,
+          active_organization_id: userData.active_organization_id,
+          active_organization_name: userData.active_organization_name,
+          active_organization_slug: userData.active_organization_slug,
+          active_domain: userData.active_domain,
+          organizations: userData.organizations || [],
         }, 
         loading: false 
       });

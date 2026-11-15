@@ -175,6 +175,8 @@ The following versions were deployed, executed, and verified:
 | `778be99882b6` | `users` | User accounts; UUID PK, case-insensitive unique email, VARCHAR+CHECK role, timezone-aware `created_at` |
 | `e819b932c01a` | `sources` | Raw ingested source documents; UUID PK, original_filename, content_type, size_bytes > 0 check, SHA-256 checksum, storage_key, storage_mode, source_type, uploaded_by FK (users.id), status, created_at, updated_at |
 | `f19a0a1b2c3d` | `ring1_observations`, `ring1_memory_records` | Ring 1 observations with idempotency keys and JSONB payload; Ring 1 memory records scoped to case_id |
+| `c59d4e7f8a1b` | `ring1_observations`, `ring1_memory_records` | Replaces single-column idempotency uniqueness with composite `(organization_id, idempotency_key)` partial unique indexes (SEC-01) |
+| `d60e5f8a9b2c` | `ring1_observations`, `ring1_memory_records` | Enforces `NOT NULL` constraint on `organization_id` for both tables with migration pre-check validation (SEC-01) |
 
 ### Ring 1 Live Test & Observability Endpoints
 Mounted at `/api/v1/ring1` (protected by `get_test_operator_user` in `deps.py`):
@@ -226,5 +228,41 @@ Mounted at `/api/v1/ring1` (protected by `get_test_operator_user` in `deps.py`):
   - `LegalDomainExtension`: Egyptian Civil Law extraction and contract analysis.
   - `SalesDomainExtension`: Enterprise sales deal signals and opportunity extraction.
   - `LogisticsFleetDomainExtension`: Maritime vessel manifest and cargo inspection tracking.
+
+### AI Employee Grounded Cognitive Chain (`backend/app/api/v1/ai.py`)
+- `POST /api/v1/ai/prompt`: Executes the complete Ring 1 cognitive loop:
+  1. **Context Resolution**: Enforces server-side tenant isolation (`organization_id`) and validates client case scope against PostgreSQL via `CaseService`. Returns 403 Forbidden on foreign or invalid cases.
+  2. **Case Knowledge Retrieval**: Queries `SqlAlchemyMemoryStore` for validated legal facts, extracted contract clauses, and knowledge objects within the case boundary.
+  3. **Grounded Reasoning Formulation**: Synthesizes retrieved knowledge and conversation history into an evidence-grounded prompt with strict factual anchoring instructions.
+  4. **LLM Provider Generation**: Dispatches prompt to the active AI provider (`GeminiProvider`, `DeepSeekProvider`, `OpenAIProvider`, or `FakeLLMProvider`) via `LLMService`.
+  5. **Audit Observation Recording**: Emits and stores an append-only observation event in `ring1_observations` with payload details (`prompt_chars`, `response_chars`, `sources_count`, `latency_ms`) and broadcasts over the WebSocket bus.
+
+### Multi-Tenant SaaS Architecture (Decision D-022)
+- **Three-Tier Entity Separation**:
+  - **Organization** (`organizations` table): Customer tenant company (`id="org-..."`, `name`, `slug`, `domain`, `is_active`, `settings`).
+  - **Deployment**: Server runtime settings (`settings.ENVIRONMENT`, database connection pools, LLM provider keys).
+  - **Domain**: Business capability module (`legal`, `sales`, `logistics`) providing specialized extraction and prompts.
+- **Data Model & Relationships**:
+  - `OrganizationMembership` (`organization_memberships` table): Maps `(organization_id, user_id)` with `role IN ('admin', 'employee')`. Unique constraint prevents duplicates.
+  - Multi-tenant case and memory tables (`cases`, `sources`, `ring1_observations`, `ring1_memory_records`) store `organization_id VARCHAR(100)` and enforce tenant-scoped foreign-key isolation.
+- **Authentication & Server-Side Security**:
+  - `POST /api/v1/auth/register-organization`: Atomically creates `Organization`, Admin `User`, and `OrganizationMembership`.
+  - `POST /api/v1/auth/login`: Issues HS256 JWT embedding `sub` (user_id), `org_id`, `role`, and `domain`.
+  - `POST /api/v1/auth/switch-organization`: Verifies user's active membership in target organization before reissuing token.
+  - `get_brain_context`: Authoritative dependency validating database membership on every request, rejecting spoofed tenant claims.
+- **Organization Management Endpoints**:
+  - `GET /api/v1/organizations/me`: Retrieves current active organization profile.
+  - `GET /api/v1/organizations/members`: Lists authorized members of the organization.
+  - `POST /api/v1/organizations/members`: Admin-only endpoint inviting new employees.
+- **Frontend SaaS User Journey**:
+  - `frontend/src/app/onboarding/account/page.tsx`: Self-service organization & administrator signup.
+  - `frontend/src/app/api/auth/register/route.ts`: Sets HttpOnly session cookie on successful registration.
+  - `frontend/src/components/workspace/workspace-client.tsx`: Renders authenticated company name, domain badge, role badge, tenant ID, partitioned cases list, team management, and grounded AI Employee.
+
+### Frontend Integration & Real-Time Sync
+- **Next.js 16.4.5 & React 19 Workspace**:
+  - `frontend/src/components/workspace/workspace-client.tsx` connects UI panels to live backend endpoints (`/api/v1/cases`, `/api/v1/brain/status`, `/api/v1/ai/prompt`).
+  - `frontend/src/hooks/use-observation-ws.ts`: Resilient WebSocket client connecting to `/api/v1/ws/observations` with automatic exponential backoff reconnection, heartbeat tracking, and tenant isolation.
+  - `frontend/src/app/api/brain/status/route.ts`: Server-side proxy querying backend health and cognitive engine status.
   - All 5 core engines operate with 100% domain independence without internal code changes.
 

@@ -22,19 +22,36 @@ class InMemoryObservationStore(IObservationStore):
         self._lock = threading.RLock()
         self._observations: list[dict[str, Any]] = []
 
-    async def find_by_idempotency_key(self, idempotency_key: str) -> Optional[dict[str, Any]]:
+    async def find_by_idempotency_key(
+        self,
+        idempotency_key: str,
+        organization_id: str,
+    ) -> Optional[dict[str, Any]]:
+        clean_org = str(organization_id).strip() if organization_id is not None else ""
+        if not clean_org:
+            raise ValueError("organization_id must be a non-empty string for idempotency lookup")
+
         with self._lock:
             for obs in self._observations:
-                if obs.get("idempotency_key") == idempotency_key:
+                if (
+                    obs.get("idempotency_key") == idempotency_key
+                    and obs.get("organization_id") == clean_org
+                ):
                     return dict(obs)
             return None
 
     async def save(self, observation: dict[str, Any]) -> str:
+        raw_org = observation.get("organization_id")
+        clean_org = str(raw_org).strip() if raw_org is not None else ""
+        if not clean_org:
+            raise ValueError("observation['organization_id'] must be a non-empty string")
+
         with self._lock:
             obs_id = observation.get("id") or observation.get("observation_id") or str(uuid.uuid4())
             record = dict(observation)
             record["id"] = obs_id
             record["observation_id"] = obs_id
+            record["organization_id"] = clean_org
             if not record.get("case_id") and record.get("scope_id"):
                 record["case_id"] = record["scope_id"]
             if "created_at" not in record:

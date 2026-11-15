@@ -134,6 +134,18 @@ class TestScenarioService:
             case_id = f"case-test-{uuid.uuid4().hex[:6]}"
             adversary_case_id = f"case-adversary-{uuid.uuid4().hex[:6]}"
 
+            # Ensure valid case exists in PostgreSQL session for authoritative validation
+            from app.models.case import Case
+            test_case = Case(
+                id=uuid.uuid4(),
+                case_number=case_id,
+                title=f"Matter {case_id}",
+                organization_id=org_id,
+                status="open",
+            )
+            self.runner.db_session.add(test_case)
+            self.runner.db_session.commit()
+
             # 1. Perception
             t0 = time.perf_counter()
             raw_input = json.dumps({
@@ -175,6 +187,7 @@ class TestScenarioService:
             req_c = MeshRequest(
                 sender_engine="client",
                 recipient_capability=CONTEXT_RESOLVE,
+                context_ref=ContextRef(organization_id=org_id),
                 payload={
                     "context_hint": {
                         "organization_id": org_id,
@@ -194,28 +207,31 @@ class TestScenarioService:
             resp_c = await self.router.dispatch(req_c)
             dur_c = round((time.perf_counter() - t0) * 1000, 2)
             context_ref_str = resp_c.payload.get("context_ref", "")
+            resolved_status = resp_c.payload.get("resolution_status")
+            is_explicit = (resp_c.status == ResultStatus.SUCCESS and resolved_status == ResolutionStatus.EXPLICIT)
             ctx_ref = ContextRef(
                 context_ref_id=context_ref_str,
                 organization_id=org_id,
-                case_id=case_id,
+                case_id=resp_c.payload.get("case_id", case_id) if is_explicit else None,
                 domain_id="intellectual_property",
-                resolution_status=ResolutionStatus.EXPLICIT,
+                resolution_status=resolved_status if resolved_status else ResolutionStatus.UNRESOLVED,
             )
             yield record_event(
                 source_engine="client",
                 destination_engine="context",
                 capability=CONTEXT_RESOLVE,
                 event_type="context_resolved",
-                status="completed",
+                status="completed" if is_explicit else "failed",
                 duration_ms=dur_c,
                 response_envelope=resp_c.model_dump(mode="json"),
-                details={"context_ref": context_ref_str, "status": resp_c.payload.get("status")},
+                details={"context_ref": context_ref_str, "status": resolved_status},
             )
 
             # 2b. Context Engine - Ambiguity Negative Test
             req_c_amb = MeshRequest(
                 sender_engine="client",
                 recipient_capability=CONTEXT_RESOLVE,
+                context_ref=ContextRef(organization_id=org_id),
                 payload={"context_hint": {"organization_id": org_id}},  # missing case_id
             )
             resp_c_amb = await self.router.dispatch(req_c_amb)
@@ -296,7 +312,7 @@ class TestScenarioService:
                 },
             )
             yield record_event(
-                source_engine="observation",
+                source_engine="client",
                 destination_engine="memory",
                 capability=MEMORY_STORE_RECORD,
                 event_type="request_dispatched",
@@ -307,7 +323,7 @@ class TestScenarioService:
             dur_mem = round((time.perf_counter() - t0) * 1000, 2)
             record_id = resp_mem.payload.get("record_id")
             yield record_event(
-                source_engine="observation",
+                source_engine="client",
                 destination_engine="memory",
                 capability=MEMORY_STORE_RECORD,
                 event_type="memory_stored",
@@ -691,6 +707,7 @@ class TestScenarioService:
             req_c = MeshRequest(
                 sender_engine="client",
                 recipient_capability=CONTEXT_RESOLVE,
+                context_ref=ContextRef(organization_id=org_id),
                 payload={"context_hint": {"organization_id": org_id, "case_id": case_id, "domain_id": "legal"}},
             )
             resp_c = await self.router.dispatch(req_c)

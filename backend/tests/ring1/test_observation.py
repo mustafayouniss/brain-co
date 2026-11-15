@@ -3,6 +3,7 @@
 import pytest
 
 from app.ring1.contracts.capabilities import OBSERVATION_RECORD_EVENT
+from app.ring1.contracts.context_ref import ContextRef
 from app.ring1.contracts.envelopes import MeshRequest, ResultStatus
 from app.ring1.contracts.errors import EngineErrorCode
 from app.ring1.engines.observation import ObservationEngine
@@ -14,6 +15,7 @@ async def test_observation_record_event_in_memory(fake_llm_service):
     req = MeshRequest(
         sender_engine="client",
         recipient_capability=OBSERVATION_RECORD_EVENT,
+        context_ref=ContextRef(organization_id="org-test-obs"),
         payload={
             "event_type": "document.uploaded",
             "source": "api_gateway",
@@ -34,6 +36,7 @@ async def test_observation_idempotent_duplicate(fake_llm_service):
     req = MeshRequest(
         sender_engine="client",
         recipient_capability=OBSERVATION_RECORD_EVENT,
+        context_ref=ContextRef(organization_id="org-test-obs"),
         payload={
             "event_type": "heartbeat",
             "source": "health_check",
@@ -60,6 +63,7 @@ async def test_observation_missing_event_type(fake_llm_service):
     req = MeshRequest(
         sender_engine="client",
         recipient_capability=OBSERVATION_RECORD_EVENT,
+        context_ref=ContextRef(organization_id="org-test-obs"),
         payload={"source": "api"},
     )
     resp = await engine.handle_record_event(req)

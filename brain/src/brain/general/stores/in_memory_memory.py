@@ -21,19 +21,36 @@ class InMemoryMemoryStore(IMemoryStore):
         self._lock = threading.RLock()
         self._records: dict[str, dict[str, Any]] = {}
 
-    async def find_by_idempotency_key(self, idempotency_key: str) -> Optional[dict[str, Any]]:
+    async def find_by_idempotency_key(
+        self,
+        idempotency_key: str,
+        organization_id: str,
+    ) -> Optional[dict[str, Any]]:
+        clean_org = str(organization_id).strip() if organization_id is not None else ""
+        if not clean_org:
+            raise ValueError("organization_id must be a non-empty string for idempotency lookup")
+
         with self._lock:
             for rec in self._records.values():
-                if rec.get("idempotency_key") == idempotency_key:
+                if (
+                    rec.get("idempotency_key") == idempotency_key
+                    and rec.get("organization_id") == clean_org
+                ):
                     return dict(rec)
             return None
 
     async def save_record(self, record: dict[str, Any]) -> str:
+        raw_org = record.get("organization_id")
+        clean_org = str(raw_org).strip() if raw_org is not None else ""
+        if not clean_org:
+            raise ValueError("record['organization_id'] must be a non-empty string")
+
         with self._lock:
             rec_id = str(record.get("id") or record.get("record_id") or uuid.uuid4())
             data = dict(record)
             data["id"] = rec_id
             data["record_id"] = rec_id
+            data["organization_id"] = clean_org
             if "created_at" not in data:
                 data["created_at"] = datetime.now(timezone.utc).isoformat()
             self._records[rec_id] = data

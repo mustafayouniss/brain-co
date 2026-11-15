@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import AuditService
 from app.models.case import Case
+from app.models.case_assignment import CaseAssignment
 
 
 class CaseServiceError(Exception):
@@ -121,3 +122,92 @@ class CaseService:
             )
             .first()
         )
+
+    @staticmethod
+    def assign_user_to_case(
+        session: Session,
+        organization_id: str,
+        case_id: UUID,
+        user_id: UUID,
+        assigned_by: Optional[UUID] = None,
+    ) -> CaseAssignment:
+        """Assign an employee to a case within the organization."""
+        case = (
+            session.query(Case)
+            .filter(Case.id == case_id, Case.organization_id == organization_id)
+            .first()
+        )
+        if not case:
+            raise CaseNotFoundError(f"Case '{case_id}' not found in organization '{organization_id}'")
+
+        existing = (
+            session.query(CaseAssignment)
+            .filter(CaseAssignment.case_id == case_id, CaseAssignment.user_id == user_id)
+            .first()
+        )
+        if existing:
+            return existing
+
+        assignment = CaseAssignment(
+            id=uuid.uuid4(),
+            case_id=case_id,
+            user_id=user_id,
+            assigned_by=assigned_by,
+        )
+        session.add(assignment)
+        session.flush()
+        return assignment
+
+    @staticmethod
+    def validate_case_access(
+        session: Session,
+        organization_id: str,
+        user_id: Optional[UUID],
+        user_role: str,
+        case_id_or_number: str | UUID,
+    ) -> Case:
+        """Validate explicit case access under CACS.
+
+        Rules:
+        1. Case must belong to organization_id.
+        2. Admin: Granted access across all organization cases.
+        3. Employee: Granted access if created_by == user_id OR user is in case_assignments.
+        4. Case status (e.g. 'open') NEVER independently grants access.
+        5. Any unauthorized attempt raises CaseNotFoundError to fail closed (never reveals case exists).
+        """
+        query = session.query(Case).filter(Case.organization_id == organization_id)
+        if isinstance(case_id_or_number, UUID):
+            case = query.filter(Case.id == case_id_or_number).first()
+        else:
+            clean_val = str(case_id_or_number).strip()
+            try:
+                parsed_uuid = UUID(clean_val)
+                case = query.filter((Case.id == parsed_uuid) | (Case.case_number == clean_val)).first()
+            except (ValueError, AttributeError):
+                case = query.filter(Case.case_number == clean_val).first()
+
+        if not case:
+            raise CaseNotFoundError(f"Case '{case_id_or_number}' not found or access denied")
+
+        # Admin policy: full access across organization
+        if user_role == "admin":
+            return case
+
+        # Employee policy: creator or explicitly assigned
+        if user_id:
+            if case.created_by == user_id:
+                return case
+
+            assignment = (
+                session.query(CaseAssignment)
+                .filter(
+                    CaseAssignment.case_id == case.id,
+                    CaseAssignment.user_id == user_id,
+                )
+                .first()
+            )
+            if assignment:
+                return case
+
+        # Fail closed with 404 CaseNotFoundError
+        raise CaseNotFoundError(f"Case '{case_id_or_number}' not found or access denied")

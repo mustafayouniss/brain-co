@@ -107,9 +107,16 @@ class BasicMemoryEngine(BaseEngine, IMemoryEngine):
         context: BrainContext,
     ) -> EngineResult:
         """Store a candidate knowledge object within the authorized context scope."""
-        if not context or not context.organization_id:
+        if not context or not context.organization_id or not str(context.organization_id).strip():
             return EngineResult(
-                error={"code": "INVALID_CONTEXT", "message": "Valid BrainContext with organization_id required"}
+                error={"code": "INVALID_CONTEXT", "message": "Valid BrainContext with non-empty organization_id required"}
+            )
+
+        authorized_org = str(context.organization_id).strip()
+        payload_org = fact_data.get("organization_id")
+        if payload_org and str(payload_org).strip() != authorized_org:
+            return EngineResult(
+                error={"code": EngineErrorCode.AUTHORIZATION_DENIED.value, "message": "Access denied: payload organization_id does not match context."}
             )
 
         content = fact_data.get("content") or fact_data.get("fact") or fact_data.get("payload")
@@ -122,7 +129,10 @@ class BasicMemoryEngine(BaseEngine, IMemoryEngine):
         idempotency_key = fact_data.get("idempotency_key") or f"idemp-{record_id}"
 
         # 1. Duplicate check via store
-        existing = await self._store.find_by_idempotency_key(idempotency_key)
+        existing = await self._store.find_by_idempotency_key(
+            idempotency_key,
+            organization_id=authorized_org,
+        )
         if existing:
             return EngineResult(
                 data={
@@ -154,7 +164,7 @@ class BasicMemoryEngine(BaseEngine, IMemoryEngine):
             "confidence": float(fact_data.get("confidence", 0.9)),
             "source": fact_data.get("source", "perception"),
             "scope_level": fact_data.get("scope_level", "case" if context.effective_scope_id else "organization"),
-            "organization_id": context.organization_id,
+            "organization_id": authorized_org,
             "case_id": context.effective_scope_id,
             "scope_id": context.effective_scope_id,
             "task_id": context.task_id,
@@ -276,6 +286,14 @@ class BasicMemoryEngine(BaseEngine, IMemoryEngine):
             return context_err
 
         context_ref = request.context_ref
+        if isinstance(context_ref, str):
+            return self._error(
+                request,
+                ResultStatus.FAILED,
+                EngineErrorCode.CONTEXT_MISSING,
+                "Unverified string context reference cannot establish tenant identity.",
+            )
+
         if not context_ref or not (getattr(context_ref, "case_id", None) or "").strip():
             return self._error(
                 request,
@@ -330,15 +348,27 @@ class BasicMemoryEngine(BaseEngine, IMemoryEngine):
         metadata = request.payload.get("metadata") or {}
         source_obs_id = request.payload.get("source_observation_id")
 
+        # Enforce lifecycle invariant: New knowledge objects enter as 'candidate'.
+        # Only explicitly authorized validation authority in trusted backend context
+        # can store directly as validated or active.
+        val_auth = bool(getattr(context_ref, "validation_authority", False))
+        requested_status = request.payload.get("status")
+        initial_status = "candidate"
+        if requested_status in ("validated", "active") and val_auth:
+            initial_status = requested_status
+
         if idempotency_key:
-            existing = await self._store.find_by_idempotency_key(idempotency_key)
+            existing = await self._store.find_by_idempotency_key(
+                idempotency_key,
+                organization_id=authorized_org_id,
+            )
             if existing:
                 return self._success(
                     request,
                     {
                         "record_id": existing.get("record_id") or existing.get("id"),
                         "record_type": existing.get("record_type"),
-                        "status": existing.get("status", "active"),
+                        "status": existing.get("status", "candidate"),
                         "duplicate": True,
                         "context_ref": getattr(context_ref, "ref", str(context_ref)),
                         "case_id": existing.get("case_id", authorized_case_id),
@@ -361,7 +391,7 @@ class BasicMemoryEngine(BaseEngine, IMemoryEngine):
             "task_id": request.task_id,
             "source_observation_id": source_obs_id,
             "idempotency_key": idempotency_key,
-            "status": "active",
+            "status": initial_status,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -372,7 +402,7 @@ class BasicMemoryEngine(BaseEngine, IMemoryEngine):
             {
                 "record_id": saved_id,
                 "record_type": record_type,
-                "status": "active",
+                "status": initial_status,
                 "duplicate": False,
                 "context_ref": getattr(context_ref, "ref", str(context_ref)),
                 "case_id": authorized_case_id,
