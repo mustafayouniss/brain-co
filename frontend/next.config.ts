@@ -50,7 +50,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   turbopack: {
-    root: "/home/mohamed-alaa",
+    // Let Next.js automatically detect the project root
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
@@ -71,7 +71,7 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
       },
       {
-        source: "/sw.js",
+        source: "/sw\\.js",
         headers: [
           { key: "Content-Type", value: "application/javascript; charset=utf-8" },
           { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },

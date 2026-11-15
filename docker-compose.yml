@@ -1,3 +1,5 @@
+name: brain-co
+
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -18,24 +20,79 @@ services:
       retries: 5
       start_period: 5s
 
-  neo4j:
-    image: neo4j:5-community
-    container_name: orgbrain-neo4j
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: orgbrain-backend
     restart: always
-    ports:
-      - "7474:7474"
-      - "7687:7687"
+    env_file:
+      - .env
     environment:
-      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/password123}
+      # Inside Compose, containers use the PostgreSQL service DNS name and port.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-orgbrain_legal}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-orgbrain_legal}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-orgbrain_legal_test}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      ORGANIZATION_ID: ${ORGANIZATION_ID:-org-brain-corp}
+      # Host gateway for local services (e.g. host Ollama)
+      OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+    ports:
+      - "8000:8000"
     volumes:
-      - neo4j_data:/data
+      - raw_storage:/app/backend/raw_storage
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BACKEND_API_URL: http://backend:8000/api/v1
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+    container_name: orgbrain-frontend
+    restart: always
+    environment:
+      NODE_ENV: production
+      INTERNAL_BACKEND_URL: http://backend:8000
+      NEXT_PUBLIC_BACKEND_API_URL: http://backend:8000/api/v1
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  adminer:
+    image: adminer:latest
+    container_name: orgbrain-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:
-  neo4j_data:
+  raw_storage:

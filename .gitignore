@@ -34,3 +34,7 @@ frontend/.next/
 
 # Runtime raw storage
 raw_storage/
+
+# Local wheel cache (never commit)
+wheels/
+
