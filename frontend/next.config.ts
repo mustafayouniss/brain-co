@@ -1,3 +1,4 @@
+
 import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === "production";
@@ -9,11 +10,12 @@ const isDev = process.env.NODE_ENV === "development";
  * NEXT_PUBLIC_GA_ID is configured). 'unsafe-inline' for scripts is required by
  * the inline theme bootstrap that prevents a light/dark flash on first paint.
  *
- * `'unsafe-eval'` is added to script-src ONLY in development: React 19 / Next 16
- * dev builds call `eval()` for debugging features (e.g. reconstructing
+ * 'unsafe-eval' is added to script-src ONLY in development: React 19 / Next 16
+ * dev builds call eval() for debugging features (e.g. reconstructing
  * server-side call stacks) and throw "eval() is not supported in this
  * environment" when CSP omits it. React never uses eval() in production, so the
  * production header stays strict and unchanged.
+ *
  * Ref: https://nextjs.org/docs/app/building-your-application/configuring/content-security-policy
  */
 const securityHeaders = [
@@ -21,7 +23,10 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-DNS-Prefetch-Control", value: "on" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=(), payment=()",
+  },
   ...(isProd
     ? [
         {
@@ -49,8 +54,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+
   turbopack: {
-    root: "/home/mohamed-alaa",
+    // Let Next.js automatically detect the project root.
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
@@ -58,12 +64,14 @@ const nextConfig: NextConfig = {
       },
     },
   },
+
   images: {
     // SVG assets shipped with the original app are served un-optimized so the
     // particle-morph engine can parse them with DOMParser.
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
+
   async headers() {
     return [
       {
@@ -71,15 +79,26 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
       },
       {
-        source: "/sw.js",
+        source: "/sw\\.js",
         headers: [
-          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
-          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          {
+            key: "Content-Type",
+            value: "application/javascript; charset=utf-8",
+          },
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
         ],
       },
       {
         source: "/morphs/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
       },
     ];
   },
