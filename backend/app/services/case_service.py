@@ -108,14 +108,23 @@ class CaseService:
             query = query.filter(Case.status == status_filter)
 
         if user_role != "admin" and user_id:
-            assigned_case_ids = (
-                session.query(CaseAssignment.case_id)
-                .filter(CaseAssignment.user_id == user_id)
-                .scalar_subquery()
-            )
-            query = query.filter(
-                (Case.created_by == user_id) | Case.id.in_(assigned_case_ids)
-            )
+            try:
+                assigned_ids = [
+                    r[0]
+                    for r in session.query(CaseAssignment.case_id)
+                    .filter(CaseAssignment.user_id == user_id)
+                    .all()
+                ]
+                query = query.filter(
+                    (Case.created_by == user_id) | Case.id.in_(assigned_ids)
+                )
+            except (ProgrammingError, OperationalError):
+                session.rollback()
+                # Fail closed on pre-migration database: only show cases created by employee
+                query = session.query(Case).filter(Case.organization_id == organization_id)
+                if status_filter:
+                    query = query.filter(Case.status == status_filter)
+                query = query.filter(Case.created_by == user_id)
 
         return (
             query.order_by(Case.created_at.desc())
@@ -165,15 +174,21 @@ class CaseService:
         if existing:
             return existing
 
-        assignment = CaseAssignment(
-            id=uuid.uuid4(),
-            case_id=case_id,
-            user_id=user_id,
-            assigned_by=assigned_by,
-        )
-        session.add(assignment)
-        session.flush()
-        return assignment
+        try:
+            assignment = CaseAssignment(
+                id=uuid.uuid4(),
+                case_id=case_id,
+                user_id=user_id,
+                assigned_by=assigned_by,
+            )
+            session.add(assignment)
+            session.flush()
+            return assignment
+        except (ProgrammingError, OperationalError) as exc:
+            session.rollback()
+            raise CaseServiceError(
+                "Case assignments table not available in current database schema; migration f82a1b3c4d5e required."
+            ) from exc
 
     @staticmethod
     def validate_case_access(

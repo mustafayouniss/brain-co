@@ -20,6 +20,29 @@ services:
       retries: 5
       start_period: 5s
 
+  # Dedicated migration runner: guarantees atomic schema migrations execute before backend starts,
+  # preventing concurrent migration race conditions across multiple backend replicas.
+  migration:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: orgbrain-migration
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-orgbrain_legal}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-orgbrain_legal}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      ORGANIZATION_ID: ${ORGANIZATION_ID:-org-brain-corp}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+
   backend:
     build:
       context: .
@@ -50,6 +73,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migration:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 10s
@@ -62,14 +87,14 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_BACKEND_API_URL: http://backend:8000/api/v1
+        NEXT_PUBLIC_BACKEND_API_URL: ${NEXT_PUBLIC_BACKEND_API_URL:-http://localhost:8000/api/v1}
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
     container_name: orgbrain-frontend
     restart: always
     environment:
       NODE_ENV: production
       INTERNAL_BACKEND_URL: http://backend:8000
-      NEXT_PUBLIC_BACKEND_API_URL: http://backend:8000/api/v1
+      NEXT_PUBLIC_BACKEND_API_URL: ${NEXT_PUBLIC_BACKEND_API_URL:-http://localhost:8000/api/v1}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
     ports:
       - "3000:3000"
@@ -95,4 +120,6 @@ services:
 
 volumes:
   pgdata:
+    name: brain-co_pgdata
   raw_storage:
+    name: brain-co_raw_storage

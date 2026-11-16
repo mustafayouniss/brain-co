@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
+import { getServerBackendApiUrl } from "@/lib/server-backend-url";
 
 export async function GET() {
   try {
-    const res = await fetch(`${BACKEND_API_URL}/health/db`, {
+    const res = await fetch(`${getServerBackendApiUrl()}/health/db`, {
       method: "GET",
       cache: "no-store",
     });

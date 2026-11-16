@@ -18,9 +18,9 @@ def test_general_brain_subprocess_standalone_execution():
     standalone_code = """
 import sys
 
-# Ensure backend or app are NOT in sys.path
+# Ensure backend or app are NOT in sys.path (preserve brain standalone paths)
 for p in list(sys.path):
-    if "backend" in p or "app" in p:
+    if ("backend" in p or p.endswith("/app") or p == "/app") and "brain" not in p:
         sys.path.remove(p)
 
 import brain

@@ -37,5 +37,5 @@ WORKDIR /app/backend
 
 EXPOSE 8000
 
-# Apply database migrations before starting the API server
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Start the API server (database migrations are managed via dedicated migration service)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

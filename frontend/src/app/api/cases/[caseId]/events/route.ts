@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerBackendApiUrl } from "@/lib/server-backend-url";
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
 const COOKIE_NAME = "backend_token";
 
 export async function GET(
@@ -22,7 +22,7 @@ export async function GET(
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const backendUrl = new URL(`${BACKEND_API_URL}/cases/${caseId}/events`);
+    const backendUrl = new URL(`${getServerBackendApiUrl()}/cases/${caseId}/events`);
     if (runId) backendUrl.searchParams.set("run_id", runId);
     if (sinceSequence) backendUrl.searchParams.set("since_sequence", sinceSequence);
     if (limit) backendUrl.searchParams.set("limit", limit);

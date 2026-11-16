@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerBackendApiUrl } from "@/lib/server-backend-url";
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
 const COOKIE_NAME = "backend_token";
 
 export async function GET(
@@ -16,7 +16,7 @@ export async function GET(
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const backendResponse = await fetch(`${BACKEND_API_URL}/ring1/test-runs/${runId}`, {
+    const backendResponse = await fetch(`${getServerBackendApiUrl()}/ring1/test-runs/${runId}`, {
       method: "GET",
       headers,
     });

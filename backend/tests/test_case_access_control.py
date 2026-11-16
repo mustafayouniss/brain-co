@@ -232,3 +232,96 @@ def test_revoked_assignment_immediately_revokes_access(db_session: Session, cacs
             user_role="employee",
             case_id_or_number=data["case_a"].id,
         )
+
+
+def test_employee_list_cases_isolation(db_session: Session, cacs_fixture):
+    """Employee listing cases sees only cases they created or are assigned to."""
+    data = cacs_fixture
+
+    # Create a second case created by admin_a in Org A
+    case_admin = Case(
+        id=uuid.uuid4(),
+        case_number=f"CAS-{uuid.uuid4().hex[:6]}",
+        title="Admin Matter",
+        organization_id=data["org_a"].id,
+        status="open",
+        created_by=data["admin_a"].id,
+    )
+    db_session.add(case_admin)
+    db_session.commit()
+
+    # 1. Admin sees both cases in Org A
+    admin_cases = CaseService.list_cases(
+        session=db_session,
+        organization_id=data["org_a"].id,
+        user_id=data["admin_a"].id,
+        user_role="admin",
+    )
+    admin_ids = {c.id for c in admin_cases}
+    assert data["case_a"].id in admin_ids
+    assert case_admin.id in admin_ids
+
+    # 2. Assigned employee sees only case_a (assigned), not case_admin
+    emp_assigned_cases = CaseService.list_cases(
+        session=db_session,
+        organization_id=data["org_a"].id,
+        user_id=data["emp_assigned_a"].id,
+        user_role="employee",
+    )
+    assigned_ids = {c.id for c in emp_assigned_cases}
+    assert data["case_a"].id in assigned_ids
+    assert case_admin.id not in assigned_ids
+
+    # 3. Unassigned employee sees 0 cases
+    emp_unassigned_cases = CaseService.list_cases(
+        session=db_session,
+        organization_id=data["org_a"].id,
+        user_id=data["emp_unassigned_a"].id,
+        user_role="employee",
+    )
+    assert len(emp_unassigned_cases) == 0
+
+
+def test_case_service_degraded_fallback_without_assignments_table(db_session: Session, cacs_fixture, monkeypatch):
+    """When case_assignments table raises ProgrammingError, CACS fails closed gracefully."""
+    data = cacs_fixture
+    from sqlalchemy.exc import ProgrammingError
+
+    original_query = db_session.query
+
+    def mock_query(*entities, **kwargs):
+        if any(e is CaseAssignment or getattr(e, "class_", None) is CaseAssignment for e in entities):
+            raise ProgrammingError("relation 'case_assignments' does not exist", None, None)
+        return original_query(*entities, **kwargs)
+
+    monkeypatch.setattr(db_session, "query", mock_query)
+
+    # 1. Creator employee STILL accesses their created case
+    case = CaseService.validate_case_access(
+        session=db_session,
+        organization_id=data["org_a"].id,
+        user_id=data["emp_creator_a"].id,
+        user_role="employee",
+        case_id_or_number=data["case_a"].id,
+    )
+    assert case.id == data["case_a"].id
+
+    # 2. Employee with non-creator status fails closed (access denied) without crashing
+    with pytest.raises(CaseNotFoundError):
+        CaseService.validate_case_access(
+            session=db_session,
+            organization_id=data["org_a"].id,
+            user_id=data["emp_assigned_a"].id,
+            user_role="employee",
+            case_id_or_number=data["case_a"].id,
+        )
+
+    # 3. list_cases degrades gracefully to only created cases (does not crash with 500)
+    creator_cases = CaseService.list_cases(
+        session=db_session,
+        organization_id=data["org_a"].id,
+        user_id=data["emp_creator_a"].id,
+        user_role="employee",
+    )
+    assert len(creator_cases) == 1
+    assert creator_cases[0].id == data["case_a"].id

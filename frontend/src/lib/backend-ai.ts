@@ -7,8 +7,9 @@
  * Frontend proxy: POST /api/ai/prompt
  */
 
+import { getServerBackendApiUrl } from "./server-backend-url.ts";
+
 const FRONTEND_API_URL = ""; // Use relative URL for same-origin
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
 
 export interface PromptRequest {
   prompt: string;
@@ -36,8 +37,11 @@ export async function generateAIResponse(
   token: string,
   request: PromptRequest
 ): Promise<PromptResponse> {
-  // Use frontend proxy for browser requests (same-origin)
-  const apiUrl = typeof window !== "undefined" ? `${FRONTEND_API_URL}/api/ai/prompt` : `${BACKEND_API_URL}/ai/prompt`;
+  // Use frontend proxy for browser requests (same-origin), internal backend on server
+  const apiUrl =
+    typeof window !== "undefined"
+      ? `${FRONTEND_API_URL}/api/ai/prompt`
+      : `${getServerBackendApiUrl()}/ai/prompt`;
 
   const response = await fetch(apiUrl, {
     method: "POST",

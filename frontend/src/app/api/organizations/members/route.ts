@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerBackendApiUrl } from "@/lib/server-backend-url";
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
 const COOKIE_NAME = "backend_token";
 
 export async function GET(request: NextRequest) {
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const res = await fetch(`${BACKEND_API_URL}/organizations/members`, {
+    const res = await fetch(`${getServerBackendApiUrl()}/organizations/members`, {
       method: "GET",
       headers,
       cache: "no-store",
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const res = await fetch(`${BACKEND_API_URL}/organizations/members`, {
+    const res = await fetch(`${getServerBackendApiUrl()}/organizations/members`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),

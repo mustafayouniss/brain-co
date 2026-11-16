@@ -113,17 +113,30 @@ def _validate_session_and_case(
                     return True
                 if case_match.created_by == user_id:
                     return True
-                assigned = (
-                    db.query(CaseAssignment)
-                    .filter(
-                        CaseAssignment.case_id == case_match.id,
-                        CaseAssignment.user_id == user_id,
+                try:
+                    assigned = (
+                        db.query(CaseAssignment)
+                        .filter(
+                            CaseAssignment.case_id == case_match.id,
+                            CaseAssignment.user_id == user_id,
+                        )
+                        .first()
                     )
-                    .first()
-                )
-                return bool(assigned is not None)
+                    return bool(assigned is not None)
+                except (ProgrammingError, OperationalError):
+                    db.rollback()
+                    return False
             else:
-                # If case does not exist in DB, allow as generic observation scope filter
+                # Verify case does not belong to another organization (cross-tenant attempt)
+                try:
+                    clean_str = case_id.strip()
+                    parsed_uuid = UUID(clean_str)
+                    cross_case = db.query(Case).filter(Case.id == parsed_uuid).first()
+                    if cross_case and cross_case.organization_id != organization_id:
+                        return False
+                except (ValueError, AttributeError):
+                    pass
+                # Ephemeral observation scope filter
                 return True
 
         return True

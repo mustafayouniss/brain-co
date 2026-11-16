@@ -76,10 +76,6 @@ export function FloatingChatWidget() {
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
-  if (isLoginPage) {
-    return null;
-  }
-
   const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
@@ -98,6 +94,10 @@ export function FloatingChatWidget() {
       scrollToBottom(shouldReduceMotion ? "auto" : "smooth");
     }
   }, [messages, isLoading, shouldReduceMotion]);
+
+  if (isLoginPage) {
+    return null;
+  }
 
   const handleCopy = async (id: string, text: string) => {
     try {

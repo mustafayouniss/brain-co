@@ -1,6 +1,29 @@
 # Progress
 
-## Current Status — Session 10 (2026-11-16T00:30Z)
+## Current Status — Session 11 (2026-11-16T13:20Z)
+
+**Full System Remediation & Next.js 16.4.6 Runtime Security Upgrade verified on host and running Docker containers.**
+
+### Container State
+- Containers running & healthy:
+  - `orgbrain-postgres` (pgvector/pgvector:pg17 on port 5433, volume `brain-co_pgdata`)
+  - `orgbrain-migration` (Alembic migration service, Exited 0)
+  - `orgbrain-backend` (FastAPI + Python 3.12 on port 8000, healthy)
+  - `orgbrain-frontend` (Next.js 16.4.6 on port 3000, healthy)
+  - `orgbrain-adminer` (Adminer 4.8 on port 8080)
+- Verified Runtime Next.js Version: `16.4.6` (host and container)
+- Healthchecks: configured and passing HTTP 200 on `/health` and `/`
+- Database revision: `f82a1b3c4d5e (head)` applied via decoupled migration service
+
+### Verified Core Capabilities & Security Upgrades
+1. **Next.js 16.4.6 Runtime**: Host filesystem and `orgbrain-frontend` container verified executing Next.js 16.4.6 (mitigating GHSA-2464-fhr4-w9xw, GHSA-p3m5-59mp-jv5r, GHSA-673q-mjm6-r5xr).
+2. **Server-Side URL Resolution**: `server-backend-url.ts` verified routing all 18 server routes to `http://backend:8000` while clients use `/api/v1`.
+3. **One-Shot Migration Container**: Decoupled Alembic upgrade to prevent race conditions on multi-instance backend starts.
+4. **CACS Access Control**: Case access strictly enforced server-side with tenant isolation.
+5. **Session Persistence**: Page reload and route transitions retain authentication session without premature redirects.
+6. **React Error #300 Remediation**: Relocated conditional early return in `FloatingChatWidget` below hook declarations; eliminated crashes (Error #300 / #310) during client-side route transitions between `/` and `/login`.
+
+## Previous Status — Session 10 (2026-11-16T00:30Z)
 
 **Teammate Docker setup integrated with latest BRAIN-CO codebase. Single-command deployment operational.**
 

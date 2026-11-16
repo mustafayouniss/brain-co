@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerBackendApiUrl } from "@/lib/server-backend-url";
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
 const COOKIE_NAME = "backend_token";
 
 export async function GET(
@@ -17,7 +17,7 @@ export async function GET(
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const res = await fetch(`${BACKEND_API_URL}/cases/${caseId}/documents`, {
+    const res = await fetch(`${getServerBackendApiUrl()}/cases/${caseId}/documents`, {
       method: "GET",
       headers,
       cache: "no-store",
@@ -60,7 +60,7 @@ export async function POST(
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const res = await fetch(`${BACKEND_API_URL}/cases/${caseId}/documents`, {
+    const res = await fetch(`${getServerBackendApiUrl()}/cases/${caseId}/documents`, {
       method: "POST",
       headers,
       body: backendFormData,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerBackendApiUrl } from "@/lib/server-backend-url";
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
 const COOKIE_NAME = "backend_token";
 
 /**
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward request to backend (backend authoritatively enforces auth or anonymous mode)
-    const response = await fetch(`${BACKEND_API_URL}/ai/prompt`, {
+    const response = await fetch(`${getServerBackendApiUrl()}/ai/prompt`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),

@@ -8,7 +8,11 @@
  * Auth scheme: Bearer token (JWT HS256)
  */
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
+import { getServerBackendApiUrl } from "./server-backend-url.ts";
+
+function getBackendApiUrl(): string {
+  return getServerBackendApiUrl();
+}
 
 export interface LoginRequest {
   email: string;
@@ -84,7 +88,7 @@ export interface ApiError {
 export async function registerOrganizationToBackend(
   data: RegisterOrganizationRequest
 ): Promise<RegisterOrganizationResponse> {
-  const response = await fetch(`${BACKEND_API_URL}/auth/register-organization`, {
+  const response = await fetch(`${getBackendApiUrl()}/auth/register-organization`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -104,7 +108,7 @@ export async function registerOrganizationToBackend(
  * Login to backend and receive JWT token
  */
 export async function loginToBackend(credentials: LoginRequest): Promise<LoginResponse> {
-  const response = await fetch(`${BACKEND_API_URL}/auth/login`, {
+  const response = await fetch(`${getBackendApiUrl()}/auth/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -124,7 +128,7 @@ export async function loginToBackend(credentials: LoginRequest): Promise<LoginRe
  * Get current user profile from backend
  */
 export async function getCurrentUser(token: string): Promise<User> {
-  const response = await fetch(`${BACKEND_API_URL}/auth/me`, {
+  const response = await fetch(`${getBackendApiUrl()}/auth/me`, {
     method: "GET",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -151,7 +155,7 @@ export async function createUser(
     role: "admin" | "employee";
   }
 ): Promise<User> {
-  const response = await fetch(`${BACKEND_API_URL}/users`, {
+  const response = await fetch(`${getBackendApiUrl()}/users`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
