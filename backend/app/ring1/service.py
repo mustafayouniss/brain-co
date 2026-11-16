@@ -124,11 +124,15 @@ class Ring1TestRunner:
         self,
         mode: str = "e2e",
         custom_prompt: str | None = None,
+        organization_id: str | None = None,
+        case_id: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Delegate scenario execution to TestScenarioService."""
         async for event in self._scenario_service.execute(
             mode=mode,
             custom_prompt=custom_prompt,
+            organization_id=organization_id,
+            case_id=case_id,
         ):
             yield event
 

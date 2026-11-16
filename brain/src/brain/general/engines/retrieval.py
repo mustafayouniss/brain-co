@@ -141,6 +141,7 @@ class BasicRetrievalEngine(BaseEngine, IRetrievalEngine):
         data = {
             "query": q,
             "case_id": context.effective_scope_id,
+            "retrieval_method": getattr(self._strategy, "strategy_name", "postgresql_lexical"),
             "total_results": len(results),
             "results": results,
             "records": results,
@@ -253,6 +254,7 @@ class BasicRetrievalEngine(BaseEngine, IRetrievalEngine):
                 "query": query_text,
                 "case_id": authorized_case_id,
                 "organization_id": authorized_org_id,
+                "retrieval_method": getattr(self._strategy, "strategy_name", "postgresql_lexical"),
                 "total_results": len(results),
                 "results": results,
                 "records": results,

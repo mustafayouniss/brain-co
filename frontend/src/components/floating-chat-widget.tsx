@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   AlertCircle,
@@ -57,6 +58,10 @@ function formatTime(date: Date): string {
  * - Strict preservation of backend AI contracts & anonymous dev testing
  */
 export function FloatingChatWidget() {
+  const pathname = usePathname();
+  const isLoginPage = pathname === "/login";
+  const isWorkspace = pathname?.startsWith("/workspace");
+
   const [isOpen, setIsOpen] = React.useState(false);
   const [input, setInput] = React.useState("");
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
@@ -65,7 +70,7 @@ export function FloatingChatWidget() {
   const [lastFailedPrompt, setLastFailedPrompt] = React.useState<string | null>(null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [hasUnread, setHasUnread] = React.useState(false);
-  const [showTeaser, setShowTeaser] = React.useState(true);
+  const [showTeaser, setShowTeaser] = React.useState(!isWorkspace && !isLoginPage);
 
   const shouldReduceMotion = useReducedMotion();
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -89,6 +94,10 @@ export function FloatingChatWidget() {
       scrollToBottom(shouldReduceMotion ? "auto" : "smooth");
     }
   }, [messages, isLoading, shouldReduceMotion]);
+
+  if (isLoginPage) {
+    return null;
+  }
 
   const handleCopy = async (id: string, text: string) => {
     try {

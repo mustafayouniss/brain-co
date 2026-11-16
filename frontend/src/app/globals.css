@@ -167,12 +167,16 @@ select {
     font-size: 14px;
     font-weight: 600;
     text-decoration: none;
-    transform: translateY(-160%);
-    transition: transform 160ms ease;
+    transform: translateY(-200%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 160ms ease, opacity 160ms ease;
   }
 
   .skip-link:focus-visible {
     transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .container-page {

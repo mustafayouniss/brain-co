@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-
-const BACKEND_URL =
-  process.env.INTERNAL_BACKEND_URL ||
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "http://127.0.0.1:8000";
+import { getServerBackendApiUrl } from "@/lib/server-backend-url";
 
 /**
  * Issues a short-lived single-use WebSocket ticket without exposing the JWT to JavaScript.
@@ -31,7 +27,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/auth/ws-ticket`, {
+    const res = await fetch(`${getServerBackendApiUrl()}/auth/ws-ticket`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

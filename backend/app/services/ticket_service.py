@@ -15,7 +15,8 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import logging
 import secrets
-from typing import Optional
+import threading
+from typing import Any, Optional
 import uuid
 from uuid import UUID
 
@@ -28,6 +29,10 @@ from app.models.ws_ticket import WebSocketTicket
 logger = logging.getLogger("app.services.ticket_service")
 
 TICKET_TTL_SECONDS = 60
+
+# Thread-safe in-memory fallback store when ws_tickets table is not yet migrated
+_fallback_lock = threading.Lock()
+_fallback_store: dict[str, dict[str, Any]] = {}
 
 
 @dataclass(frozen=True)
@@ -68,17 +73,33 @@ class TicketService:
 
         clean_case_id = case_id.strip() if case_id and case_id.strip() else None
 
-        ticket_record = WebSocketTicket(
-            ticket_hash=ticket_hash,
-            user_id=user_id,
-            organization_id=organization_id.strip(),
-            case_id=clean_case_id,
-            created_at=now,
-            expires_at=expires_at,
-            consumed=False,
-        )
-        session.add(ticket_record)
-        session.flush()
+        try:
+            ticket_record = WebSocketTicket(
+                ticket_hash=ticket_hash,
+                user_id=user_id,
+                organization_id=organization_id.strip(),
+                case_id=clean_case_id,
+                created_at=now,
+                expires_at=expires_at,
+                consumed=False,
+            )
+            session.add(ticket_record)
+            session.flush()
+        except (sa.exc.ProgrammingError, sa.exc.OperationalError) as exc:
+            session.rollback()
+            logger.debug("ws_tickets table not present, falling back to thread-safe in-memory store: %s", exc)
+            with _fallback_lock:
+                # Purge expired keys
+                expired_keys = [k for k, v in _fallback_store.items() if v["expires_at"] <= now]
+                for k in expired_keys:
+                    _fallback_store.pop(k, None)
+                _fallback_store[ticket_hash] = {
+                    "user_id": user_id,
+                    "organization_id": organization_id.strip(),
+                    "case_id": clean_case_id,
+                    "expires_at": expires_at,
+                    "consumed": False,
+                }
 
         logger.info(
             "Issued WebSocket ticket for user %s, org %s, case_scope=%s (expires in %ds)",
@@ -111,43 +132,67 @@ class TicketService:
         ticket_hash = cls.hash_ticket(raw_token)
         now = datetime.now(timezone.utc)
 
-        # Atomic update and fetch in a single database round-trip
-        stmt = (
-            sa.update(WebSocketTicket)
-            .where(
-                WebSocketTicket.ticket_hash == ticket_hash,
-                WebSocketTicket.consumed.is_(False),
-                WebSocketTicket.expires_at > now,
+        try:
+            # Atomic update and fetch in a single database round-trip
+            stmt = (
+                sa.update(WebSocketTicket)
+                .where(
+                    WebSocketTicket.ticket_hash == ticket_hash,
+                    WebSocketTicket.consumed.is_(False),
+                    WebSocketTicket.expires_at > now,
+                )
+                .values(
+                    consumed=True,
+                    consumed_at=now,
+                )
+                .returning(
+                    WebSocketTicket.user_id,
+                    WebSocketTicket.organization_id,
+                    WebSocketTicket.case_id,
+                    WebSocketTicket.expires_at,
+                )
             )
-            .values(
-                consumed=True,
-                consumed_at=now,
-            )
-            .returning(
-                WebSocketTicket.user_id,
-                WebSocketTicket.organization_id,
-                WebSocketTicket.case_id,
-                WebSocketTicket.expires_at,
-            )
-        )
 
-        result = session.execute(stmt).fetchone()
-        if not result:
-            logger.warning("Ticket consumption failed: invalid, expired, or replayed")
+            result = session.execute(stmt).fetchone()
+            if result:
+                user_id, org_id, case_id, expires_at = result
+                session.commit()
+                logger.info(
+                    "Successfully consumed ticket for user %s, org %s, case_scope=%s",
+                    user_id,
+                    org_id,
+                    case_id,
+                )
+                return ConsumedTicket(
+                    user_id=user_id,
+                    organization_id=org_id,
+                    case_id=case_id,
+                    expires_at=expires_at,
+                )
             return None
-
-        user_id, org_id, case_id, expires_at = result
-        session.commit()
-
-        logger.info(
-            "Successfully consumed ticket for user %s, org %s, case_scope=%s",
-            user_id,
-            org_id,
-            case_id,
-        )
-        return ConsumedTicket(
-            user_id=user_id,
-            organization_id=org_id,
-            case_id=case_id,
-            expires_at=expires_at,
-        )
+        except (sa.exc.ProgrammingError, sa.exc.OperationalError) as exc:
+            session.rollback()
+            logger.debug("ws_tickets table not present, consuming from thread-safe fallback: %s", exc)
+            with _fallback_lock:
+                entry = _fallback_store.get(ticket_hash)
+                if not entry:
+                    logger.warning("Ticket consumption failed: ticket not found")
+                    return None
+                if entry["consumed"] or entry["expires_at"] <= now:
+                    _fallback_store.pop(ticket_hash, None)
+                    logger.warning("Ticket consumption failed: expired or replayed")
+                    return None
+                entry["consumed"] = True
+                consumed_entry = _fallback_store.pop(ticket_hash)
+                logger.info(
+                    "Successfully consumed ticket (fallback) for user %s, org %s, case_scope=%s",
+                    consumed_entry["user_id"],
+                    consumed_entry["organization_id"],
+                    consumed_entry["case_id"],
+                )
+                return ConsumedTicket(
+                    user_id=consumed_entry["user_id"],
+                    organization_id=consumed_entry["organization_id"],
+                    case_id=consumed_entry["case_id"],
+                    expires_at=consumed_entry["expires_at"],
+                )

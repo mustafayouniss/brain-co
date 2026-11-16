@@ -22,7 +22,7 @@ from brain.general.contracts.llm import (
 
 logger = logging.getLogger("app.infrastructure.ai.adapter")
 
-DEFAULT_BACKEND_MODEL = "gpt-4o-mini"
+DEFAULT_BACKEND_MODEL = "gemini-3.5-flash-lite"
 
 
 class LLMServiceAdapter(ILLMClient):
@@ -47,20 +47,14 @@ class LLMServiceAdapter(ILLMClient):
             target_model = self._default_model
             if request.model_hint:
                 if provider_id == "gemini":
-                    if request.model_hint == "reasoning":
-                        target_model = "gemini-2.5-pro" if "pro" in str(self._default_model) else self._default_model
-                    elif request.model_hint == "fast":
-                        target_model = self._default_model
+                    target_model = self._default_model
                 elif provider_id == "deepseek":
                     if request.model_hint == "reasoning":
                         target_model = "deepseek-reasoner"
                     elif request.model_hint == "fast":
                         target_model = "deepseek-chat"
                 else:
-                    if request.model_hint == "reasoning":
-                        target_model = "o3-mini"
-                    elif request.model_hint == "fast":
-                        target_model = "gpt-4o-mini"
+                    target_model = self._default_model
 
             backend_messages = [
                 BackendLLMMessage(

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loginToBackend } from "@/lib/backend-auth";
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
 const COOKIE_NAME = "backend_token";
 const COOKIE_MAX_AGE = 60 * 60; // 60 minutes in seconds (matches backend ACCESS_TOKEN_EXPIRE_MINUTES)
 

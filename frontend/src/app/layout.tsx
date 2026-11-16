@@ -3,7 +3,6 @@ import { Inter } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { SiteBackground } from "@/components/site-background/site-background";
 import { FloatingChatWidget } from "@/components/floating-chat-widget";
-import { Ring1TestConsole } from "@/components/ring1-test-console/ring1-test-console";
 import { site } from "@/content/site";
 import "./globals.css";
 
@@ -103,7 +102,6 @@ export default function RootLayout({
         <SiteBackground />
         <Providers>{children}</Providers>
         <FloatingChatWidget />
-        <Ring1TestConsole />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/backend-auth";
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
 const COOKIE_NAME = "backend_token";
 
 export async function GET(request: NextRequest) {

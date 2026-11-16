@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerBackendApiUrl } from "@/lib/server-backend-url";
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000/api/v1";
 const COOKIE_NAME = "backend_token";
 
 export async function GET(request: NextRequest) {
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const backendUrl = new URL(`${BACKEND_API_URL}/ring1/knowledge`);
+    const backendUrl = new URL(`${getServerBackendApiUrl()}/ring1/knowledge`);
     backendUrl.searchParams.set("organization_id", orgId);
     backendUrl.searchParams.set("case_id", caseId);
     if (query) {

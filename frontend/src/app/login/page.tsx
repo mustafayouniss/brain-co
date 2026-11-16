@@ -3,7 +3,6 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { authCopy } from "@/content/marketing";
 import { ArrowIcon, BrandMark } from "@/components/brand/icons";
-import { PrototypeBadge } from "@/components/auth/prototype-badge";
 import { LoginForm } from "@/components/auth/login-form";
 
 export const metadata: Metadata = {
@@ -27,7 +26,6 @@ export default function LoginPage() {
       <div className="relative flex flex-1 items-center justify-center px-5 py-12">
         <div className="flex w-full max-w-md flex-col items-center text-center">
           <BrandMark className="h-12 w-12" />
-          <PrototypeBadge className="mt-5" />
           <p className="eyebrow mt-5">{copy.eyebrow}</p>
           <h1 className="mt-3 text-3xl font-medium tracking-[-0.04em] sm:text-4xl">
             {copy.title}
@@ -46,9 +44,6 @@ export default function LoginPage() {
               {copy.context}
               <ArrowIcon className="h-3 w-3" />
             </Link>
-          </p>
-          <p className="mt-3 max-w-sm text-xs leading-relaxed text-[#8a94a8]">
-            {copy.prototypeNote}
           </p>
         </div>
       </div>

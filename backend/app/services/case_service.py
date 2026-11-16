@@ -11,6 +11,7 @@ import uuid
 from uuid import UUID
 
 import sqlalchemy as sa
+from sqlalchemy.exc import ProgrammingError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.audit import AuditService
@@ -94,11 +95,36 @@ class CaseService:
         limit: int = 50,
         offset: int = 0,
         status_filter: Optional[str] = None,
+        user_id: Optional[UUID] = None,
+        user_role: str = "admin",
     ) -> list[Case]:
-        """List cases strictly scoped to the authenticated organization."""
+        """List cases strictly scoped to the authenticated organization and role.
+
+        Admins see all cases in the organization.
+        Employees see only cases they created or are explicitly assigned to.
+        """
         query = session.query(Case).filter(Case.organization_id == organization_id)
         if status_filter:
             query = query.filter(Case.status == status_filter)
+
+        if user_role != "admin" and user_id:
+            try:
+                assigned_ids = [
+                    r[0]
+                    for r in session.query(CaseAssignment.case_id)
+                    .filter(CaseAssignment.user_id == user_id)
+                    .all()
+                ]
+                query = query.filter(
+                    (Case.created_by == user_id) | Case.id.in_(assigned_ids)
+                )
+            except (ProgrammingError, OperationalError):
+                session.rollback()
+                # Fail closed on pre-migration database: only show cases created by employee
+                query = session.query(Case).filter(Case.organization_id == organization_id)
+                if status_filter:
+                    query = query.filter(Case.status == status_filter)
+                query = query.filter(Case.created_by == user_id)
 
         return (
             query.order_by(Case.created_at.desc())
@@ -148,15 +174,21 @@ class CaseService:
         if existing:
             return existing
 
-        assignment = CaseAssignment(
-            id=uuid.uuid4(),
-            case_id=case_id,
-            user_id=user_id,
-            assigned_by=assigned_by,
-        )
-        session.add(assignment)
-        session.flush()
-        return assignment
+        try:
+            assignment = CaseAssignment(
+                id=uuid.uuid4(),
+                case_id=case_id,
+                user_id=user_id,
+                assigned_by=assigned_by,
+            )
+            session.add(assignment)
+            session.flush()
+            return assignment
+        except (ProgrammingError, OperationalError) as exc:
+            session.rollback()
+            raise CaseServiceError(
+                "Case assignments table not available in current database schema; migration f82a1b3c4d5e required."
+            ) from exc
 
     @staticmethod
     def validate_case_access(
@@ -198,16 +230,19 @@ class CaseService:
             if case.created_by == user_id:
                 return case
 
-            assignment = (
-                session.query(CaseAssignment)
-                .filter(
-                    CaseAssignment.case_id == case.id,
-                    CaseAssignment.user_id == user_id,
+            try:
+                assignment = (
+                    session.query(CaseAssignment)
+                    .filter(
+                        CaseAssignment.case_id == case.id,
+                        CaseAssignment.user_id == user_id,
+                    )
+                    .first()
                 )
-                .first()
-            )
-            if assignment:
-                return case
+                if assignment:
+                    return case
+            except (ProgrammingError, OperationalError):
+                session.rollback()
 
         # Fail closed with 404 CaseNotFoundError
         raise CaseNotFoundError(f"Case '{case_id_or_number}' not found or access denied")

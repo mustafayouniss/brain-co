@@ -9,18 +9,22 @@ from __future__ import annotations
 
 import json
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_test_operator_user
+from app.api.deps import _bearer_scheme, get_db, get_test_operator_user
 from app.core.config import settings
 from app.core.context import BrainContext, get_brain_context
+from app.core.security import decode_access_token
 from app.models.user import User
 from app.ring1.contracts.capabilities import ALL_CAPABILITIES
 from app.ring1.service import Ring1TestRunner, test_run_registry
+from app.services.case_service import CaseNotFoundError, CaseService
 
 router = APIRouter()
 
@@ -38,6 +42,14 @@ class TestRunRequest(BaseModel):
         default=True,
         description="Whether to stream real-time events via Server-Sent Events (SSE)",
     )
+    case_id: str | None = Field(
+        default=None,
+        description="Optional case identifier (UUID or case_number) to scope execution",
+    )
+    organization_id: str | None = Field(
+        default=None,
+        description="Optional organization identifier (verified against session)",
+    )
 
 
 @router.post("/test-run", summary="Execute Ring 1 Live Integration Test")
@@ -45,6 +57,7 @@ async def execute_ring1_test(
     request: TestRunRequest,
     db: Session = Depends(get_db),
     _user: User | None = Depends(get_test_operator_user),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ):
     """Execute live scenario across the six Ring 1 engines.
 
@@ -53,12 +66,55 @@ async def execute_ring1_test(
     """
     runner = Ring1TestRunner(db_session=db)
 
+    # Resolve and authoritatively validate context boundaries
+    active_org_id: str | None = None
+    active_case_id: str | None = None
+
+    if credentials is not None:
+        try:
+            payload = decode_access_token(credentials.credentials)
+            token_org = payload.get("org_id") or payload.get("organization_id")
+            if request.organization_id and token_org and request.organization_id != token_org:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Organization mismatch between request and authenticated session",
+                )
+            active_org_id = token_org
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    if not active_org_id:
+        active_org_id = request.organization_id or getattr(settings, "ORGANIZATION_ID", "org-brain-corp")
+
+    if request.case_id:
+        # Enforce CACS validation
+        user_uuid = _user.id if _user else None
+        user_role = _user.role if _user else "admin"
+        try:
+            case_rec = CaseService.validate_case_access(
+                session=db,
+                organization_id=active_org_id,
+                user_id=user_uuid,
+                user_role=user_role,
+                case_id_or_number=request.case_id,
+            )
+            active_case_id = str(case_rec.id)
+        except CaseNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Case '{request.case_id}' not found or access denied",
+            )
+
     if request.stream:
         async def sse_event_generator():
             try:
                 async for event in runner.execute(
                     mode=request.mode,
                     custom_prompt=request.custom_prompt,
+                    organization_id=active_org_id,
+                    case_id=active_case_id,
                 ):
                     yield f"data: {json.dumps(event)}\n\n"
             except Exception as exc:
@@ -81,7 +137,12 @@ async def execute_ring1_test(
 
     # Non-streaming fallback
     events = []
-    async for event in runner.execute(mode=request.mode, custom_prompt=request.custom_prompt):
+    async for event in runner.execute(
+        mode=request.mode,
+        custom_prompt=request.custom_prompt,
+        organization_id=active_org_id,
+        case_id=active_case_id,
+    ):
         events.append(event)
 
     summary = events[-1]["details"] if events else {}
@@ -196,6 +257,28 @@ async def upload_pdf(
             detail="Invalid file signature: File must be a valid PDF starting with %PDF-",
         )
 
+    # Authoritative CACS validation (Fail-Closed: unknown or unauthorized case returns 404)
+    user_uuid = None
+    if context.user_id:
+        try:
+            user_uuid = UUID(context.user_id)
+        except Exception:
+            user_uuid = None
+
+    try:
+        case_obj = CaseService.validate_case_access(
+            session=db,
+            organization_id=clean_org_id,
+            user_id=user_uuid,
+            user_role=context.role,
+            case_id_or_number=clean_case_id,
+        )
+    except CaseNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Case '{clean_case_id}' not found or access denied in organization '{clean_org_id}'.",
+        )
+
     runner = Ring1TestRunner(db_session=db)
 
     if stream:
@@ -205,7 +288,7 @@ async def upload_pdf(
                     pdf_bytes=pdf_bytes,
                     filename=safe_filename,
                     organization_id=clean_org_id,
-                    case_id=clean_case_id,
+                    case_id=case_obj.case_number,
                     mode=mode,
                 ):
                     yield f"data: {json.dumps(event)}\n\n"
@@ -233,7 +316,7 @@ async def upload_pdf(
         pdf_bytes=pdf_bytes,
         filename=safe_filename,
         organization_id=clean_org_id,
-        case_id=clean_case_id,
+        case_id=case_obj.case_number,
         mode=mode,
     ):
         events.append(event)
