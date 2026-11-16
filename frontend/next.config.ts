@@ -4,8 +4,8 @@ const isProd = process.env.NODE_ENV === "production";
 const isDev = process.env.NODE_ENV === "development";
 
 /**
- * Security headers for every route.
- * CSP allows same-origin scripts/styles plus Google Analytics (only used when
+ * Strict Content-Security-Policy for production. Google Tag Manager / GA4 is
+ * permitted only on the external connect/script sources (and only fires when
  * NEXT_PUBLIC_GA_ID is configured). 'unsafe-inline' for scripts is required by
  * the inline theme bootstrap that prevents a light/dark flash on first paint.
  *
@@ -14,6 +14,7 @@ const isDev = process.env.NODE_ENV === "development";
  * server-side call stacks) and throw "eval() is not supported in this
  * environment" when CSP omits it. React never uses eval() in production, so the
  * production header stays strict and unchanged.
+ *
  * Ref: https://nextjs.org/docs/app/building-your-application/configuring/content-security-policy
  */
 const securityHeaders = [
