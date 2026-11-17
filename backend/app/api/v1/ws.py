@@ -81,34 +81,38 @@ def _validate_session_and_case(
         user_role = membership.role if membership else user.role
 
         if case_id:
-            from app.models.case import Case
-            from app.models.case_assignment import CaseAssignment
-
-            # Look up case in database
             clean_case = case_id.strip()
-            case_match = None
-            try:
-                parsed_uuid = UUID(clean_case)
-                case_match = (
-                    db.query(Case)
-                    .filter(
-                        Case.organization_id == organization_id,
-                        (Case.id == parsed_uuid) | (Case.case_number == clean_case),
-                    )
-                    .first()
-                )
-            except (ValueError, AttributeError):
-                case_match = (
-                    db.query(Case)
-                    .filter(
-                        Case.organization_id == organization_id,
-                        Case.case_number == clean_case,
-                    )
-                    .first()
-                )
+            if clean_case:
+                from app.models.case import Case
+                from app.models.case_assignment import CaseAssignment
 
-            if case_match:
-                # Case exists in DB: enforce strict CACS
+                # Look up case strictly in caller's organization
+                case_match = None
+                try:
+                    parsed_uuid = UUID(clean_case)
+                    case_match = (
+                        db.query(Case)
+                        .filter(
+                            Case.organization_id == organization_id,
+                            (Case.id == parsed_uuid) | (Case.case_number == clean_case),
+                        )
+                        .first()
+                    )
+                except (ValueError, AttributeError):
+                    case_match = (
+                        db.query(Case)
+                        .filter(
+                            Case.organization_id == organization_id,
+                            Case.case_number == clean_case,
+                        )
+                        .first()
+                    )
+
+                if not case_match:
+                    # If no case matches in caller's organization, return False to close with 1008
+                    return False
+
+                # Case exists in caller's organization: enforce strict CACS
                 if user_role == "admin":
                     return True
                 if case_match.created_by == user_id:
@@ -123,21 +127,9 @@ def _validate_session_and_case(
                         .first()
                     )
                     return bool(assigned is not None)
-                except (ProgrammingError, OperationalError):
+                except Exception:
                     db.rollback()
                     return False
-            else:
-                # Verify case does not belong to another organization (cross-tenant attempt)
-                try:
-                    clean_str = case_id.strip()
-                    parsed_uuid = UUID(clean_str)
-                    cross_case = db.query(Case).filter(Case.id == parsed_uuid).first()
-                    if cross_case and cross_case.organization_id != organization_id:
-                        return False
-                except (ValueError, AttributeError):
-                    pass
-                # Ephemeral observation scope filter
-                return True
 
         return True
 

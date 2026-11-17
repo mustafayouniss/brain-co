@@ -179,7 +179,14 @@ class TestScenarioService:
             existing_case = None
             try:
                 c_uuid = uuid.UUID(str(case_id))
-                existing_case = self.runner.db_session.query(Case).filter(Case.id == c_uuid).first()
+                existing_case = (
+                    self.runner.db_session.query(Case)
+                    .filter(
+                        Case.id == c_uuid,
+                        Case.organization_id == org_id,
+                    )
+                    .first()
+                )
             except (ValueError, AttributeError):
                 pass
             if not existing_case:
@@ -539,7 +546,14 @@ class TestScenarioService:
             existing_case = None
             try:
                 c_uuid = uuid.UUID(str(case_id))
-                existing_case = self.runner.db_session.query(Case).filter(Case.id == c_uuid).first()
+                existing_case = (
+                    self.runner.db_session.query(Case)
+                    .filter(
+                        Case.id == c_uuid,
+                        Case.organization_id == org_id,
+                    )
+                    .first()
+                )
             except (ValueError, AttributeError):
                 pass
             if not existing_case:
@@ -768,7 +782,14 @@ class TestScenarioService:
             existing_case = None
             try:
                 c_uuid = uuid.UUID(str(case_id))
-                existing_case = self.runner.db_session.query(Case).filter(Case.id == c_uuid).first()
+                existing_case = (
+                    self.runner.db_session.query(Case)
+                    .filter(
+                        Case.id == c_uuid,
+                        Case.organization_id == org_id,
+                    )
+                    .first()
+                )
             except (ValueError, AttributeError):
                 pass
             if not existing_case:
