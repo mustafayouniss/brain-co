@@ -920,3 +920,138 @@ html.dark .screen-base {
     width: min(46vw, 820px);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Cinematic Editorial Redesign Tokens & Utilities (SCOPED — ADDITIVE)
+   Zero leakage into workspace, login, or base site styles.
+--------------------------------------------------------------------------- */
+
+.cinematic-theme {
+  --cinematic-bg: #000000;
+  --cinematic-bg-deep: #020409;
+  --cinematic-fg: #ffffff;
+  --cinematic-fg-muted: #a3a3a3;
+  --cinematic-fg-subtle: #707070;
+  --cinematic-border: rgba(255, 255, 255, 0.08);
+  --cinematic-border-strong: rgba(255, 255, 255, 0.16);
+  --cinematic-border-focus: rgba(255, 255, 255, 0.32);
+  --cinematic-violet: #8052ff;
+  --cinematic-cyan: #00d8ff;
+  --cinematic-teal: #15846e;
+  --cinematic-amber: #ffb829;
+  --cinematic-magenta: #ff007f;
+
+  background-color: var(--cinematic-bg);
+  background-image:
+    radial-gradient(ellipse 70% 60% at 50% 45%, rgba(6, 16, 38, 0.45) 0%, transparent 80%),
+    radial-gradient(circle at 50% 50%, rgba(128, 82, 255, 0.03) 0%, transparent 60%);
+  color: var(--cinematic-fg);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+.cinematic-display,
+.cinematic-theme .cinematic-display {
+  font-size: clamp(3.2rem, 7.5vw, 6.8rem);
+  font-weight: 500;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+}
+
+.cinematic-title,
+.cinematic-theme .cinematic-title {
+  font-size: clamp(2.2rem, 4.5vw, 3.8rem);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.04;
+}
+
+.cinematic-subtitle,
+.cinematic-theme .cinematic-subtitle {
+  font-size: clamp(1.05rem, 1.8vw, 1.35rem);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.55;
+  color: var(--cinematic-fg-muted);
+}
+
+.cinematic-eyebrow,
+.cinematic-theme .cinematic-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--cinematic-fg-muted);
+}
+
+.cinematic-theme .cinematic-eyebrow::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--cinematic-cyan);
+  box-shadow: 0 0 8px var(--cinematic-cyan);
+}
+
+.cinematic-theme .cinematic-canvas-container {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cinematic-theme .cinematic-content-layer {
+  position: relative;
+  z-index: 10;
+}
+
+.cinematic-theme .cinematic-glass-card {
+  background: rgba(10, 14, 24, 0.45);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+}
+
+.cinematic-theme .cinematic-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 28px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: all 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cinematic-theme .cinematic-pill-btn-primary {
+  background: #ffffff;
+  color: #000000;
+  box-shadow: 0 4px 20px rgba(255, 255, 255, 0.15);
+}
+
+.cinematic-theme .cinematic-pill-btn-primary:hover {
+  background: #f0f0f0;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 28px rgba(255, 255, 255, 0.25);
+}
+
+.cinematic-theme .cinematic-pill-btn-secondary {
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.cinematic-theme .cinematic-pill-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.24);
+  transform: translateY(-1px);
+}
+
+

@@ -35,7 +35,7 @@ export function CardDescription({
   return <p className={cn("text-sm leading-relaxed text-muted", className)} {...props} />;
 }
 
-type BadgeVariant = "available" | "planned" | "brand" | "success" | "danger";
+type BadgeVariant = "available" | "planned" | "brand" | "success" | "danger" | "cyan" | "violet";
 
 const badgeStyles: Record<BadgeVariant, string> = {
   available: "border-gold text-gold",
@@ -43,6 +43,8 @@ const badgeStyles: Record<BadgeVariant, string> = {
   brand: "border-[color-mix(in_srgb,var(--brand)_55%,transparent)] text-ring",
   success: "border-[color-mix(in_srgb,var(--success)_55%,transparent)] text-success",
   danger: "border-[color-mix(in_srgb,var(--danger)_55%,transparent)] text-danger",
+  cyan: "border-[rgba(0,216,255,0.45)] text-[#00d8ff] bg-[rgba(0,216,255,0.08)]",
+  violet: "border-[rgba(128,82,255,0.45)] text-[#9a76ff] bg-[rgba(128,82,255,0.08)]",
 };
 
 export function Badge({

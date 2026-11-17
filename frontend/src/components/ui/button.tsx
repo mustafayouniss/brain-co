@@ -8,7 +8,9 @@ type Variant =
   | "ghost"
   | "gold"
   | "danger"
-  | "link";
+  | "link"
+  | "pill-white"
+  | "pill-glass";
 type Size = "sm" | "md" | "lg";
 
 const variants: Record<Variant, string> = {
@@ -24,6 +26,10 @@ const variants: Record<Variant, string> = {
   danger:
     "border border-[color-mix(in_srgb,var(--danger)_55%,transparent)] bg-transparent text-danger hover:bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]",
   link: "border-0 bg-transparent p-0 text-muted underline-offset-4 hover:text-foreground hover:underline",
+  "pill-white":
+    "rounded-full border border-white bg-white text-black font-medium tracking-tight hover:bg-[#eaeaea] shadow-[0_4px_24px_rgba(255,255,255,0.18)]",
+  "pill-glass":
+    "rounded-full border border-white/12 bg-white/[0.04] text-white font-medium tracking-tight hover:bg-white/[0.09] hover:border-white/24 backdrop-blur-md",
 };
 
 const sizes: Record<Size, string> = {
