@@ -302,7 +302,7 @@ def test_pdf_upload_api_endpoint_streaming(client, db_session, admin_headers):
     assert "run_completed" in event_types
 
 
-def test_pdf_upload_api_validation_errors(client):
+def test_pdf_upload_api_validation_errors(client, admin_headers):
     """Adversarial validation tests on PDF upload endpoint:
 
     - Non-PDF bytes rejected with 400.
@@ -313,6 +313,7 @@ def test_pdf_upload_api_validation_errors(client):
         "/api/v1/ring1/upload-pdf",
         files={"file": ("malicious.exe", b"MZ\x90\x00\x03\x00\x00\x00", "application/octet-stream")},
         data={"organization_id": settings.ORGANIZATION_ID, "case_id": "case-1"},
+        headers=admin_headers,
     )
     assert resp.status_code == 400
     err_body = resp.json()
@@ -325,6 +326,7 @@ def test_pdf_upload_api_validation_errors(client):
         "/api/v1/ring1/upload-pdf",
         files={"file": ("valid.pdf", pdf_bytes, "application/pdf")},
         data={"organization_id": settings.ORGANIZATION_ID, "case_id": "  "},
+        headers=admin_headers,
     )
     assert resp2.status_code == 400
     err_body2 = resp2.json()
@@ -382,7 +384,7 @@ def test_saved_knowledge_persistence_and_isolation(client, db_session, admin_hea
     assert records_fresh[0]["case_id"] == case_1
 
 
-def test_pdf_upload_unknown_case_fails_closed_404_no_synthesis(client, db_session):
+def test_pdf_upload_unknown_case_fails_closed_404_no_synthesis(client, db_session, admin_headers):
     """Verify uploading to an unknown case returns 404 and does NOT synthesize a case."""
     pdf_bytes = _create_sample_contract_pdf()
     org_id = settings.ORGANIZATION_ID
@@ -392,6 +394,7 @@ def test_pdf_upload_unknown_case_fails_closed_404_no_synthesis(client, db_sessio
         "/api/v1/ring1/upload-pdf",
         files={"file": ("contract.pdf", pdf_bytes, "application/pdf")},
         data={"organization_id": org_id, "case_id": unknown_case, "stream": "false"},
+        headers=admin_headers,
     )
     assert resp.status_code == 404
     # Ensure zero cases were synthesized in the database

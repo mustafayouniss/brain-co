@@ -248,3 +248,66 @@ def test_get_case_events_replay_and_isolation(client: TestClient, api_cases_fixt
         headers={"Authorization": f"Bearer {data['token_admin_b']}"},
     )
     assert res_unauth.status_code == 404
+
+
+def test_create_case_duplicate_number_maps_to_409_regression(
+    client: TestClient, api_cases_fixture, db_session: Session, monkeypatch
+):
+    """Regression test for Issue 1: IntegrityError on uq_cases_org_number maps to 409 CASE_ALREADY_EXISTS."""
+    from sqlalchemy.exc import IntegrityError
+
+    data = api_cases_fixture
+    existing_case = data["case_a1"]
+
+    # 1. Standard duplicate caught by CaseAlreadyExistsError
+    res1 = client.post(
+        "/api/v1/cases",
+        headers={"Authorization": f"Bearer {data['token_admin_a']}"},
+        json={"case_number": existing_case.case_number, "title": "Duplicate Case"},
+    )
+    assert res1.status_code == 409
+    body1 = res1.json()
+    err_detail1 = body1.get("error", {}).get("details", {}) or body1.get("detail", {})
+    assert err_detail1.get("code") == "CASE_ALREADY_EXISTS"
+
+    # 2. Simulated concurrent race condition: db.commit() raises IntegrityError with uq_cases_org_number
+    fake_orig = Exception("duplicate key value violates unique constraint")
+    fake_diag = type("Diag", (), {"constraint_name": "uq_cases_org_number"})()
+    setattr(fake_orig, "diag", fake_diag)
+    simulated_integrity_err = IntegrityError("INSERT INTO cases ...", {}, fake_orig)
+
+    def mock_commit():
+        raise simulated_integrity_err
+
+    monkeypatch.setattr(db_session, "commit", mock_commit)
+
+    res2 = client.post(
+        "/api/v1/cases",
+        headers={"Authorization": f"Bearer {data['token_admin_a']}"},
+        json={"case_number": f"NEW-{uuid.uuid4().hex[:6]}", "title": "Concurrent Case"},
+    )
+    assert res2.status_code == 409
+    body2 = res2.json()
+    err_detail2 = body2.get("error", {}).get("details", {}) or body2.get("detail", {})
+    assert err_detail2.get("code") == "CASE_ALREADY_EXISTS"
+    assert "already exists in organization" in err_detail2.get("message", "")
+
+    # 3. Unrelated IntegrityError is re-raised and NOT mapped to 409
+    fake_orig_other = Exception("foreign key violation")
+    fake_diag_other = type("Diag", (), {"constraint_name": "fk_some_other_table"})()
+    setattr(fake_orig_other, "diag", fake_diag_other)
+    simulated_other_err = IntegrityError("INSERT INTO cases ...", {}, fake_orig_other)
+
+    def mock_commit_other():
+        raise simulated_other_err
+
+    monkeypatch.setattr(db_session, "commit", mock_commit_other)
+
+    res3 = client.post(
+        "/api/v1/cases",
+        headers={"Authorization": f"Bearer {data['token_admin_a']}"},
+        json={"case_number": f"OTHER-{uuid.uuid4().hex[:6]}", "title": "Other Case"},
+    )
+    assert res3.status_code == 500
+
+

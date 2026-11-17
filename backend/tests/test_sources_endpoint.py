@@ -6,7 +6,9 @@ import uuid
 import pytest
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import create_access_token, hash_password
+from app.models.source import Source
 from app.models.user import User
 
 
@@ -86,3 +88,17 @@ def test_sources_endpoint_rejects_oversized_file(client, auth_headers, monkeypat
     assert response.status_code == 413
     data = response.json()
     assert "error" in data
+
+
+def test_sources_endpoint_sets_organization_id(client, auth_headers, db_session):
+    """Uploaded source row has organization_id == settings.ORGANIZATION_ID."""
+    file_bytes = b"Organization tag test content."
+    files = {"file": ("org_tag.txt", io.BytesIO(file_bytes), "text/plain")}
+
+    response = client.post("/api/v1/sources", files=files, headers=auth_headers)
+    assert response.status_code == 201
+    data = response.json()
+
+    source = db_session.get(Source, data["id"])
+    assert source is not None
+    assert source.organization_id == settings.ORGANIZATION_ID

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.context import BrainContext, get_brain_context
+from app.core.text import normalize_arabic
 from app.ring1.models.observation import MemoryRecord
 from app.schemas.ring1_api import RetrievalItem, RetrievalSearchResponse
 
@@ -56,7 +57,7 @@ def search_records(
     candidates = query.all()
 
     # 5. Lexical keyword scoring and filtering
-    query_terms = [t.lower().strip() for t in q.split() if t.strip()]
+    query_terms = [normalize_arabic(t.lower().strip()) for t in q.split() if t.strip()]
     if not query_terms:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -65,7 +66,8 @@ def search_records(
 
     scored_items: list[RetrievalItem] = []
     for rec in candidates:
-        payload_str = json.dumps(rec.payload or {}, default=str).lower()
+        raw_payload_str = json.dumps(rec.payload or {}, default=str, ensure_ascii=False)
+        payload_str = normalize_arabic(raw_payload_str.lower())
         score = 0.0
         matching_snippets: list[str] = []
 
@@ -75,8 +77,8 @@ def search_records(
                 score += count * 1.0
                 idx = payload_str.find(term)
                 start = max(0, idx - 40)
-                end = min(len(payload_str), idx + 80)
-                snippet = payload_str[start:end].replace('"', " ").strip()
+                end = min(len(raw_payload_str), idx + 80)
+                snippet = raw_payload_str[start:end].replace('"', " ").strip()
                 matching_snippets.append(f"...{snippet}...")
 
         if score > 0.0:

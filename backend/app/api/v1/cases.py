@@ -21,6 +21,7 @@ from fastapi import (
     status,
 )
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -91,6 +92,20 @@ def create_case(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "CASE_ALREADY_EXISTS", "message": str(exc)},
         )
+    except IntegrityError as exc:
+        db.rollback()
+        diag = getattr(getattr(exc, "orig", None), "diag", None)
+        constraint_name = getattr(diag, "constraint_name", None)
+        if constraint_name == "uq_cases_org_number" or "uq_cases_org_number" in str(exc):
+            clean_number = payload.case_number.strip()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "CASE_ALREADY_EXISTS",
+                    "message": f"Case with number '{clean_number}' already exists in organization '{context.organization_id}'",
+                },
+            )
+        raise
 
 
 @router.get(

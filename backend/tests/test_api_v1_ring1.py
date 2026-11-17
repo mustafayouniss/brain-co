@@ -139,11 +139,12 @@ def test_ring1_production_environment_requires_admin(client, admin_headers):
         assert res_admin.status_code == 200
 
 
-def test_ring1_knowledge_rejects_mismatched_organization_id(client):
+def test_ring1_knowledge_rejects_mismatched_organization_id(client, admin_headers):
     """GET /api/v1/ring1/knowledge with mismatched organization_id returns 403."""
     response = client.get(
         "/api/v1/ring1/knowledge",
         params={"organization_id": "evil-org", "case_id": "c1", "query": "x"},
+        headers=admin_headers,
     )
     assert response.status_code == 403
     err_body = response.json()

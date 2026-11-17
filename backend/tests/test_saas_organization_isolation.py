@@ -22,7 +22,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from ai.core.services.llm_service import LLMService
+from ai.providers.fake_provider import FakeLLMProvider
+from app.api.deps import get_llm_service
 from app.core.security import decode_access_token
+from app.main import app
 from app.models.case import Case
 from app.models.organization import Organization, OrganizationMembership
 from app.models.user import User
@@ -70,6 +74,10 @@ ORGANIZATION_SPECS = [
 
 def test_five_real_organizations_signup_and_isolation(client: TestClient, db_session: Session):
     """Register all 5 organizations, establish distinct identities, and verify complete isolation."""
+    fake_provider = FakeLLMProvider(custom_response="Authenticated AI response.")
+    fake_service = LLMService(provider=fake_provider)
+
+    app.dependency_overrides[get_llm_service] = lambda: fake_service
     run_suffix = uuid.uuid4().hex[:6]
     registered_orgs = []
 
@@ -233,3 +241,5 @@ def test_five_real_organizations_signup_and_isolation(client: TestClient, db_ses
     # Org 2 does NOT see Org 1's employee
     org2_members = client.get("/api/v1/organizations/members", headers=org2["headers"]).json()
     assert not any(m["email"] == emp_email for m in org2_members)
+
+    app.dependency_overrides.pop(get_llm_service, None)
