@@ -1,6 +1,46 @@
 # Progress
 
-## Current Status — Session 11 (2026-11-16T13:20Z)
+## Current Status — Session 13 (2026-11-18T01:00Z)
+
+**Technical Audit Remediation: Case Creation Concurrency & Arabic Lexical Retrieval Hardening completed and verified.**
+
+### Key Changes
+1. **Case Creation TOCTOU Race Condition Defense (Issue 1)**:
+   - `create_case` (`backend/app/api/v1/cases.py`) safely catches `IntegrityError` on `uq_cases_org_number`.
+   - Performs `db.rollback()` first and maps cleanly to HTTP 409 `CASE_ALREADY_EXISTS`. Unrelated integrity violations are re-raised without being masked.
+   - Regression test: `test_create_case_duplicate_number_maps_to_409_regression` in `test_api_v1_cases.py`.
+2. **Arabic Text Normalization & Unicode Escaping Fix (Issue 6)**:
+   - Created `backend/app/core/text.py` (`normalize_arabic`) for diacritics stripping, alef, taa marbuta, and alif maqsura normalization.
+   - Applied `ensure_ascii=False` and `normalize_arabic` across `SqlAlchemyRetrievalStore` and `GET /api/v1/retrieval/search` endpoint.
+   - Regression test: `backend/tests/test_arabic_retrieval.py`.
+3. **Ingestion Pipeline Resilience & Deduplication (Batch B - Issues 2, 3, 4)**:
+   - Verified worker SAVEPOINT protection (`session.begin_nested()`), deterministic idempotency keys (`source-doc-{case_id}-{sha256}`), task retry handling, and pre-storage deduplication scoped to `(organization_id, case_id, checksum_sha256)`.
+   - Regression tests: `backend/tests/test_document_ingestion_pipeline.py`.
+
+## Previous Status — Session 12 (2026-11-17T22:45Z)
+
+**Document Ingestion Pipeline & Tenant Isolation Hardening (Rounds 1 & 2) completed and regression tested.**
+
+### Key Changes
+1. **Tenant Isolation Hardening (Round 2)**:
+   - **WebSocket Fail-Closed (Item 1)**: `_validate_session_and_case` strictly filters cases by `organization_id` and rejects non-matching or cross-tenant case IDs with 1008 without information disclosure.
+   - **Scenario Runner Cross-Tenant Defense (Item 2)**: Added `Case.organization_id == org_id` filter across all three case query locations in `TestScenarioService`.
+   - **Test-Run Organization Verification (Item 3)**: Eliminated client body organization fallback in `execute_ring1_test` for tokens without an org claim, enforcing strict default deployment organization.
+   - **Knowledge Endpoint CACS (Item 4)**: Enforced `CaseService.validate_case_access` on `GET /ring1/knowledge` returning 404 for unassigned/unauthorized cases while retaining 403 on explicit organization mismatch.
+   - **Round 2 Tests**: Added `backend/tests/test_tenant_isolation_round2.py` covering WebSocket rejection, scenario runner isolation, spoofing rejection, and knowledge endpoint 404/403 security.
+2. **Worker Resilience (Round 1 - Issue 4)**:
+   - In `process_task_worker`, wrapped `Observation` and `MemoryRecord` persistence in `session.begin_nested()` (SAVEPOINT).
+   - Targeted `IntegrityError` catch around each block; re-queries existing record by `(organization_id, idempotency_key)` and reuses its ID.
+3. **Duplicate Upload Deduplication & Retries (Round 1 - Issue 3+2)**:
+   - Pre-computes SHA-256 before writing to raw storage.
+   - Lookups existing Source strictly by composite key `(organization_id, case_id, checksum_sha256)`.
+   - Reuses existing source and active/pending task without writing duplicate files to disk or re-scheduling worker.
+   - Automatically resets and schedules failed/dead tasks when re-uploaded.
+   - Updated task idempotency key format to `f"source-doc-{case.id}-{sha256}"`.
+4. **Round 1 Tests**:
+   - Added `backend/tests/test_document_ingestion_pipeline.py`.
+
+## Previous Status — Session 11 (2026-11-16T13:20Z)
 
 **Full System Remediation & Next.js 16.4.6 Runtime Security Upgrade verified on host and running Docker containers.**
 

@@ -299,5 +299,11 @@ To transition from a developer test harness to an enterprise-grade legal product
 4. **Durable Event History & Reconnection Recovery**: If a lawyer closes their browser or loses internet connection while an AI engine is executing a multi-step analysis, they do not lose the trace events. The client requests all events since their last received sequence number (`GET /api/v1/cases/{caseId}/events?since_sequence=X`), seamlessly restoring the complete trace upon reconnection.
 5. **Transparent AI Telemetry**: The system never pretends deterministic fallbacks are AI-generated. Every execution plan and trace event is stamped with `plan_origin: "gemini_ai"` or `"deterministic_fallback"` along with provider error messages, ensuring complete transparency for legal audit trails.
 
+### System Hardening & Audit Remediation (Plain Language)
+1. **Resilient Case Number Uniqueness**: When two users attempt to create a case with the same reference number concurrently, the database catches the race condition without crashing the server. The transaction rolls back cleanly and returns a standard HTTP 409 conflict message (`CASE_ALREADY_EXISTS`) instead of an unhandled 500 error.
+2. **Normalized Arabic Search**: Legal text in Arabic often contains slight spelling variations (like `ة` vs `ه` or `أ` vs `ا`) and vowel diacritics (tashkeel). The search engine now normalizes these variations and preserves native UTF-8 Arabic characters in the database instead of escaping them, allowing lawyers to find case documents and legal citations accurately regardless of minor spelling differences.
+3. **Smart Document Deduplication & Worker Resilience**: Uploading the same contract twice to the same case no longer wastes disk space or LLM processing costs. The system recognizes the file's digital fingerprint (SHA-256), reuses the existing record, and protects background workers from crashing if observation records already exist.
+
+
 
 
