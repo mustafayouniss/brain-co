@@ -15,14 +15,18 @@ export function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="border-t border-border band-deep">
-      <div className="container-page grid gap-10 py-14 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
+    <footer className="relative border-t border-white/[0.08] bg-[#010206] text-white overflow-hidden">
+      <div className="container-page relative z-10 grid gap-12 py-16 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
         <div className="flex flex-col gap-5">
-          <Link href="/" aria-label="Brain-co home">
+          <Link href="/" aria-label="Brain-co home" className="w-fit transition-opacity hover:opacity-90">
             <Wordmark />
           </Link>
-          <p className="max-w-xs text-sm leading-relaxed text-muted">{footerCopy.blurb}</p>
-          <NewsletterForm />
+          <p className="max-w-xs text-xs font-light leading-relaxed text-zinc-400">
+            {footerCopy.blurb}
+          </p>
+          <div className="pt-2">
+            <NewsletterForm />
+          </div>
         </div>
 
         <FooterColumn title={footerCopy.product.title} links={footerCopy.product.links} />
@@ -30,10 +34,10 @@ export function Footer() {
         <FooterColumn title={footerCopy.legal.title} links={footerCopy.legal.links} />
       </div>
 
-      <div className="border-t border-border">
+      <div className="border-t border-white/[0.06] bg-black/40">
         <div className="container-page flex flex-col items-start justify-between gap-4 py-6 sm:flex-row sm:items-center">
-          <p className="text-xs text-subtle">{footerCopy.rights(year)}</p>
-          <ul className="flex items-center gap-2">
+          <p className="text-xs font-mono text-zinc-500">{footerCopy.rights(year)}</p>
+          <ul className="flex items-center gap-2.5">
             {socials.map(({ name, href, icon: Icon }) => (
               <li key={name}>
                 <a
@@ -41,7 +45,7 @@ export function Footer() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={footerCopy.socialAria(name)}
-                  className="grid h-9 w-9 place-items-center rounded-full border border-border text-muted transition-colors hover:border-border-strong hover:text-foreground"
+                  className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-white/[0.02] text-zinc-400 transition-colors hover:border-white/25 hover:text-white"
                 >
                   <Icon />
                 </a>
@@ -63,13 +67,15 @@ function FooterColumn({
 }) {
   return (
     <nav aria-label={title}>
-      <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-subtle">{title}</h2>
+      <h2 className="text-xs font-mono font-medium uppercase tracking-[0.14em] text-zinc-400">
+        {title}
+      </h2>
       <ul className="mt-4 space-y-2.5">
         {links.map((link) => (
           <li key={link.href}>
             <Link
               href={link.href}
-              className="text-sm text-muted transition-colors hover:text-foreground"
+              className="text-xs font-light text-zinc-400 transition-colors hover:text-white"
             >
               {link.label}
             </Link>
@@ -83,7 +89,7 @@ function FooterColumn({
 const iconProps = {
   viewBox: "0 0 24 24",
   fill: "currentColor",
-  className: "h-4 w-4",
+  className: "h-3.5 w-3.5",
   "aria-hidden": true,
 } as const;
 
