@@ -70,6 +70,8 @@ async def execute_ring1_test(
     active_org_id: str | None = None
     active_case_id: str | None = None
 
+    default_org = getattr(settings, "ORGANIZATION_ID", "org-brain-corp")
+
     if credentials is not None:
         try:
             payload = decode_access_token(credentials.credentials)
@@ -79,14 +81,24 @@ async def execute_ring1_test(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Organization mismatch between request and authenticated session",
                 )
-            active_org_id = token_org
+            if not token_org and request.organization_id and request.organization_id != default_org:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Organization mismatch between request and authenticated session",
+                )
+            active_org_id = token_org or default_org
         except HTTPException:
             raise
         except Exception:
             pass
 
     if not active_org_id:
-        active_org_id = request.organization_id or getattr(settings, "ORGANIZATION_ID", "org-brain-corp")
+        if request.organization_id and request.organization_id != default_org:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Organization mismatch between request and authenticated session",
+            )
+        active_org_id = default_org
 
     if request.case_id:
         # Enforce CACS validation
@@ -354,6 +366,28 @@ def get_case_knowledge(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="case_id is a required non-empty parameter.",
+        )
+
+    # Authoritative CACS validation (Fail-Closed: unknown or unauthorized case returns 404)
+    user_uuid = None
+    if context.user_id:
+        try:
+            user_uuid = UUID(context.user_id)
+        except Exception:
+            user_uuid = None
+
+    try:
+        case_obj = CaseService.validate_case_access(
+            session=db,
+            organization_id=clean_org_id,
+            user_id=user_uuid,
+            user_role=context.role,
+            case_id_or_number=clean_case_id,
+        )
+    except CaseNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Case '{clean_case_id}' not found or access denied in organization '{clean_org_id}'.",
         )
 
     runner = Ring1TestRunner(db_session=db)

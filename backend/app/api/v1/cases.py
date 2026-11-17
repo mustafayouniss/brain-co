@@ -216,7 +216,18 @@ async def upload_case_document(
             file=file,
             context=context,
         )
+        is_duplicate = getattr(task, "is_duplicate", False) or getattr(source, "is_duplicate", False)
         db.commit()
+
+        if is_duplicate:
+            return DocumentUploadResponse(
+                task_id=task.id,
+                case_id=str(c.id),
+                source_id=source.id,
+                filename=source.original_filename,
+                state=task.state,
+                message="Document is already registered",
+            )
 
         # Enqueue background worker processing
         background_tasks.add_task(_run_worker_in_background, task.id)

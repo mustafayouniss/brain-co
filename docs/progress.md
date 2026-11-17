@@ -1,6 +1,32 @@
 # Progress
 
-## Current Status — Session 20 (2026-11-17T20:00Z)
+## Current Status — Session 21 (2026-11-18T01:30Z)
+
+**Document Ingestion Pipeline & Tenant Isolation Hardening (Rounds 1 & 2) and Frontend Cinematic Architecture Verified.**
+
+### Backend Remediation & Hardening Highlights
+1. **Tenant Isolation Hardening (Round 2)**:
+   - **WebSocket Fail-Closed (Item 1)**: `_validate_session_and_case` strictly filters cases by `organization_id` and rejects non-matching or cross-tenant case IDs with 1008 without information disclosure.
+   - **Scenario Runner Cross-Tenant Defense (Item 2)**: Added `Case.organization_id == org_id` filter across all three case query locations in `TestScenarioService`.
+   - **Test-Run Organization Verification (Item 3)**: Eliminated client body organization fallback in `execute_ring1_test` for tokens without an org claim, enforcing strict default deployment organization.
+   - **Knowledge Endpoint CACS (Item 4)**: Enforced `CaseService.validate_case_access` on `GET /ring1/knowledge` returning 404 for unassigned/unauthorized cases while retaining 403 on explicit organization mismatch.
+   - **Round 2 Tests**: Added `backend/tests/test_tenant_isolation_round2.py` covering WebSocket rejection, scenario runner isolation, spoofing rejection, and knowledge endpoint 404/403 security (4/4 passed).
+2. **Worker Resilience (Round 1 - Issue 4)**:
+   - In `process_task_worker`, wrapped `Observation` and `MemoryRecord` persistence in `session.begin_nested()` (SAVEPOINT).
+   - Targeted `IntegrityError` catch around each block; re-queries existing record by `(organization_id, idempotency_key)` and reuses its ID.
+3. **Duplicate Upload Deduplication & Retries (Round 1 - Issue 3+2)**:
+   - Pre-computes SHA-256 before writing to raw storage.
+   - Lookups existing Source strictly by composite key `(organization_id, case_id, checksum_sha256)`.
+   - Reuses existing source and active/pending task without writing duplicate files to disk or re-scheduling worker.
+   - Automatically resets and schedules failed/dead tasks when re-uploaded.
+   - Updated task idempotency key format to `f"source-doc-{case.id}-{sha256}"`.
+4. **Round 1 Tests**:
+   - Added `backend/tests/test_document_ingestion_pipeline.py` (4/4 passed).
+5. **Technical Audit Remediation (Batch A)**:
+   - `create_case` TOCTOU race condition mapped to 409 `CASE_ALREADY_EXISTS`.
+   - Arabic lexical search normalization (`backend/app/core/text.py`) and UTF-8 JSON dump unescaping.
+
+## Previous Status — Session 20 (2026-11-17T20:00Z)
 
 **Full Reference Experience (`Organizational Brain Refrence (1).html`) Recreated Inside Brain-Co Production Frontend. Ground-Truth Anatomical Brain + 5 Modular Department Targets + Continuous 7-Stage Multi-Target GPU Morphing Verified with Real-Browser CDP Captures.**
 
@@ -162,7 +188,7 @@
      - Mobile 390px Crisis: `docs/milestone1_mobile_crisis_390.png`
 6. **Strict Invariant Protection**: Zero modifications to `proxy.ts`, `server-backend-url.ts`, `backend-auth.ts`, `api/**/*`, `components/workspace/**/*`, or backend/Docker/migration files.
 
-## Previous Status — Session 12 (2026-11-16T16:40Z)
+## Previous Status — Session 11 (2026-11-16T13:20Z)
 
 **Full System Remediation & Next.js 16.4.6 Runtime Security Upgrade verified on host and running Docker containers.**
 

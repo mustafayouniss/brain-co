@@ -313,6 +313,11 @@ The public marketing frontend recreates the continuous, scroll-driven WebGL expe
 4. **Barycentric Screen-Space Shading**: Flat per-facet normals create razor-sharp Blinn-Phong specular highlights, while single-pass barycentric edge coordinates generate luminous glowing perimeters with translucent cores.
 5. **Spatial Layout & Narrative Flow**: On desktop, the 3D model glides to the left during department sections while frosted glassmorphism story cards appear on the right. On mobile, the 3D model is positioned at the top and centered horizontally below the headline with responsive scale compensation.
 
+### System Hardening & Audit Remediation (Plain Language)
+1. **Resilient Case Number Uniqueness**: When two users attempt to create a case with the same reference number concurrently, the database catches the race condition without crashing the server. The transaction rolls back cleanly and returns a standard HTTP 409 conflict message (`CASE_ALREADY_EXISTS`) instead of an unhandled 500 error.
+2. **Normalized Arabic Search**: Legal text in Arabic often contains slight spelling variations (like `ة` vs `ه` or `أ` vs `ا`) and vowel diacritics (tashkeel). The search engine now normalizes these variations and preserves native UTF-8 Arabic characters in the database instead of escaping them, allowing lawyers to find case documents and legal citations accurately regardless of minor spelling differences.
+3. **Smart Document Deduplication & Worker Resilience**: Uploading the same contract twice to the same case no longer wastes disk space or LLM processing costs. The system recognizes the file's digital fingerprint (SHA-256), reuses the existing record, and protects background workers from crashing if observation records already exist.
+
 
 
 
