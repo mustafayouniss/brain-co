@@ -20,6 +20,7 @@ import uuid
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.text import normalize_arabic
 from app.ring1.models.observation import MemoryRecord, Observation
 from brain.general.contracts.protocols import ObservationFeedResult
 from brain.general.contracts.storage import (
@@ -391,11 +392,11 @@ class SqlAlchemyRetrievalStore(IRetrievalStore):
             records = session.execute(stmt).scalars().all()
 
             results: list[dict[str, Any]] = []
-            tokens = [t.lower() for t in query.split() if len(t) > 2]
+            tokens = [normalize_arabic(t.lower()) for t in query.split() if len(t) > 2]
 
             for rec in records:
                 payload = rec.payload or {}
-                text_repr = json.dumps(payload).lower()
+                text_repr = normalize_arabic(json.dumps(payload, ensure_ascii=False).lower())
                 
                 score = 0.0
                 if tokens:
