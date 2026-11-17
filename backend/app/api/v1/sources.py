@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
 from app.core.config import settings
+from app.core.context import BrainContext, get_brain_context
 from app.models.user import User
 from app.schemas.source import SourceResponse
 from app.services.source_service import create_source
@@ -36,6 +37,7 @@ async def ingest_source_endpoint(
     file: UploadFile = File(..., description="Raw document file (PDF or TXT)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    context: BrainContext = Depends(get_brain_context),
 ) -> SourceResponse:
     """Ingest a raw document file into Source Memory.
 
@@ -89,6 +91,7 @@ async def ingest_source_endpoint(
             uploaded_by=current_user.id,
             source_type=ingest_result.source_type,
             storage_mode=ingest_result.storage_mode,
+            organization_id=context.organization_id,
         )
         db.commit()
         db.refresh(source)

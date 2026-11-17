@@ -27,6 +27,7 @@ def create_source(
     source_type: str = "document",
     storage_mode: str = "local",
     status: str = "ingested",
+    organization_id: str | None = None,
 ) -> Source:
     """Create and flush a new Source record in PostgreSQL.
 
@@ -56,6 +57,8 @@ def create_source(
         Storage backend identifier.
     status : str, default 'ingested'
         Initial source lifecycle status.
+    organization_id : str, optional
+        Owning organization identifier (derived from BrainContext).
 
     Returns
     -------
@@ -76,6 +79,9 @@ def create_source(
 
     if source_id is not None:
         kwargs["id"] = source_id
+
+    if organization_id is not None:
+        kwargs["organization_id"] = organization_id
 
     source = Source(**kwargs)
     db.add(source)
