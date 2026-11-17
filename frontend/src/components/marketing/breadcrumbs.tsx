@@ -24,22 +24,22 @@ export function Breadcrumbs({ items }: { items: Crumb[] }) {
 
   return (
     <>
-      <nav aria-label="Breadcrumb" className="container-page pt-6">
-        <ol className="flex flex-wrap items-center gap-1.5 text-xs text-subtle">
+      <nav aria-label="Breadcrumb" className="container-page pt-8">
+        <ol className="flex flex-wrap items-center gap-2 text-xs font-mono text-zinc-500">
           <li>
-            <Link href="/" className="transition-colors hover:text-foreground">
+            <Link href="/" className="transition-colors hover:text-white">
               {miscCopy.breadcrumbs.home}
             </Link>
           </li>
           {items.map((item) => (
-            <li key={item.label} className="flex items-center gap-1.5">
-              <span aria-hidden="true">/</span>
+            <li key={item.label} className="flex items-center gap-2">
+              <span aria-hidden="true" className="text-zinc-700">/</span>
               {item.href ? (
-                <Link href={item.href} className="transition-colors hover:text-foreground">
+                <Link href={item.href} className="transition-colors hover:text-white">
                   {item.label}
                 </Link>
               ) : (
-                <span aria-current="page" className="text-muted">
+                <span aria-current="page" className="text-zinc-300">
                   {item.label}
                 </span>
               )}

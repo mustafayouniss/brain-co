@@ -299,5 +299,20 @@ To transition from a developer test harness to an enterprise-grade legal product
 4. **Durable Event History & Reconnection Recovery**: If a lawyer closes their browser or loses internet connection while an AI engine is executing a multi-step analysis, they do not lose the trace events. The client requests all events since their last received sequence number (`GET /api/v1/cases/{caseId}/events?since_sequence=X`), seamlessly restoring the complete trace upon reconnection.
 5. **Transparent AI Telemetry**: The system never pretends deterministic fallbacks are AI-generated. Every execution plan and trace event is stamped with `plan_origin: "gemini_ai"` or `"deterministic_fallback"` along with provider error messages, ensuring complete transparency for legal audit trails.
 
+### Cinematic Frontend Architecture & 7-Stage Multi-Target Morphing Experience
+The public marketing frontend recreates the continuous, scroll-driven WebGL experience from `Organizational Brain Refrence (1).html`:
+1. **Authenticated Gross-Anatomical Human Brain (Hero)**: Built from 448 parenchymal meshes extracted from the verified medical asset (`brain.glb`), presenting true bilateral hemispheres, sulcal folds, cerebellar folia, and brainstem axis. Non-brain tissue (neck nerves and descending arteries) is filtered out to maintain genuine cranial proportions ($13.8 \times 16.1 \times 18.1\text{ cm}$).
+2. **Unified Multi-Target Facet Population**: Rather than switching between separate models or using opacity crossfades, a single population of 16,000 triangular shards travels continuously across 6 target geometries:
+   - Target 0: Authenticated Gross-Anatomical Brain
+   - Target 1: Legal Balance Scale on Marble Base
+   - Target 2: Human Resources Connected Figures & Network
+   - Target 3: Sales Volumetric Growth Bars & Golden Ascending Arrow
+   - Target 4: Finance Tilted Coin Ring & Central Reserve Stack
+   - Target 5: Operations Stacked Translucent Layer Disks
+3. **GPU Vertex Flight & Tumbling Rotation**: During scroll transitions, shards detach along outward surface normals, experience 3D harmonic flight turbulence, tumble around individual random unit axes using Rodrigues rotation, and lock seamlessly onto the next shape's surface.
+4. **Barycentric Screen-Space Shading**: Flat per-facet normals create razor-sharp Blinn-Phong specular highlights, while single-pass barycentric edge coordinates generate luminous glowing perimeters with translucent cores.
+5. **Spatial Layout & Narrative Flow**: On desktop, the 3D model glides to the left during department sections while frosted glassmorphism story cards appear on the right. On mobile, the 3D model is positioned at the top and centered horizontally below the headline with responsive scale compensation.
+
+
 
 
